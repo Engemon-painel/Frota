@@ -33,7 +33,8 @@
       if (r && r.result && typeof r.result === "string") { try { r = JSON.parse(r.result); } catch (e) { } }
       if (!r || !r.ok) {
         if (r && r.codigo === "SESSAO") { guardarSessao(null); EU = null; mostrarLogin(r.erro, "erro"); }
-        throw new Error((r && r.erro) || "Erro desconhecido");
+        const pa = r && r.error ? (r.error.message || r.error.code || "") : "";
+        throw new Error((r && r.erro) || (pa ? "o fluxo falhou (" + resp.status + "): " + String(pa).slice(0, 200) : "o fluxo respondeu " + resp.status + " sem dados: " + txt.slice(0, 160)));
       }
       if (r.dados) aplicar(r.dados);
       return r;
@@ -151,13 +152,25 @@
     if (!$("#q-data").value) $("#q-data").value = paraInput(new Date());
     if (!$("#h-q-data").value) $("#h-q-data").value = paraInput(new Date());
     $("#dl-pessoas").innerHTML += Array.from(new Set(HIST.map(h => h.condutor))).map(c => `<option value="${esc(c)}">`).join("");
-    desenharOcorrencias(); desenharHistorico();
+    desenharOcorrencias(); desenharHistorico(); desenharInicio();
     if (EU.perfil === "admin") desenharUsuarios();
   }
   if (SESSAO && SESSAO.token) entrar(); else mostrarLogin("");
 
   // ------------------------------------------------------------------ abas
+  // menu lateral: grupos abrem/fecham; itens com data-aba trocam a tela; data-acao executa
+  $$(".mg").forEach(b => b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
+  $("#bt-menu").addEventListener("click", () => document.body.classList.toggle("menu-aberto"));
+  $$(".menu [data-acao]").forEach(b => b.addEventListener("click", () => {
+    document.body.classList.remove("menu-aberto");
+    const a = b.dataset.acao;
+    if (a === "nova-placa") $("#bt-novo-veic").click();
+    else if (a === "carga") $("#arq-frota").click();
+    else if (a === "trocar") $("#bt-trocar").click();
+    else if (a === "exportar") $("#bt-exportar").click();
+  }));
   $$(".aba").forEach(b => b.addEventListener("click", () => {
+    document.body.classList.remove("menu-aberto");
     $$(".aba").forEach(x => x.classList.toggle("on", x === b));
     $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + b.dataset.aba; });
   }));
@@ -242,6 +255,39 @@
   }
 
   $("#tb-veiculos").addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr) abrirVeiculo(tr.dataset.placa); });
+
+  // ------------------------------------------------------------------ início (resumo)
+  function desenharInicio() {
+    $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
+    const semGar = VEICULOS.filter(v => !v.garagem_tipo).length;
+    const semEq = VEICULOS.filter(v => !v.supervisor || !v.coordenador).length;
+    const abertas = OCORRENCIAS.filter(o => o.status !== "Encerrada");
+    const trinta = Date.now() - 30 * 86400000;
+    const trocas = HIST.filter(h => new Date(h.inicio).getTime() >= trinta && h.origem !== "planilha");
+    const ativos = VEICULOS.filter(v => sem(v.status).startsWith("ativo")).length;
+    $("#ini-alertas").innerHTML =
+      (semGar ? `<div class="alerta" data-ir="garagem">⚠ <b>${semGar}</b> carros sem o local onde ficam guardados. Clique para preencher.</div>` : "") +
+      (semEq && podeSup() ? `<div class="alerta amarelo" data-ir="veiculos">⚠ <b>${semEq}</b> carros sem supervisor ou coordenador.</div>` : "") +
+      (abertas.length ? `<div class="alerta amarelo" data-ir="ocorrencias">⚠ <b>${abertas.length}</b> ocorrências abertas aguardando tratativa.</div>` : "");
+    $$("#ini-alertas .alerta").forEach(a => a.addEventListener("click", () => {
+      if (a.dataset.ir === "garagem") { filtro.garagem = "sem"; $("#f-garagem").value = "sem"; irPara("veiculos"); desenhar(); }
+      else irPara(a.dataset.ir);
+    }));
+    const k = [["Veículos", VEICULOS.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"],
+      ["Sem garagem", semGar, semGar ? "#b91c1c" : "#15803d", "veiculos"], ["Ocorrências abertas", abertas.length, abertas.length ? "#b45309" : "#15803d", "ocorrencias"],
+      ["Trocas de condutor (30 dias)", trocas.length, "#4338ca", "historico"]];
+    $("#ini-kpis").innerHTML = k.map(x => `<div class="kpi" data-ir="${x[3]}" style="border-left-color:${x[2]}"><small>${x[0]}</small><b>${x[1].toLocaleString("pt-BR")}</b></div>`).join("");
+    $$("#ini-kpis .kpi").forEach(el => el.addEventListener("click", () => irPara(el.dataset.ir)));
+    const porC = {}; VEICULOS.forEach(v => { const c = v.operacao || "Sem contrato"; porC[c] = (porC[c] || 0) + 1; });
+    const cs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]); const mx = Math.max(1, ...cs.map(c => porC[c]));
+    $("#ini-contratos").innerHTML = cs.length ? cs.map(c => `<div class="barra-c"><span title="${esc(c)}">${esc(c)}</span><div class="b" style="width:${porC[c] / mx * 100}%"></div><b>${porC[c]}</b></div>`).join("") : '<p class="info">Nenhum veículo ainda.</p>';
+    $("#ini-trocas").innerHTML = HIST.filter(h => h.origem !== "planilha").slice(0, 8).map(h => `<li><b>${esc(h.placa)}</b><span>${esc(h.condutor)}</span><span class="info">${dataHora(h.inicio)}</span></li>`).join("") || '<li class="info">Nenhuma troca ainda.</li>';
+    $("#ini-ocor").innerHTML = abertas.slice(0, 8).map(o => `<li><b>${esc(o.placa)} · ${esc(o.tipo)}</b><span>${esc(o.condutor || "condutor não identificado")}</span><span class="info">${dataHora(o.data_hora)}</span></li>`).join("") || '<li class="info">Nenhuma ocorrência aberta.</li>';
+  }
+  function irPara(aba) {
+    $$(".aba").forEach(x => x.classList.toggle("on", x.dataset.aba === aba));
+    $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + aba; });
+  }
 
   // ------------------------------------------------------------------ janela
   function abrirModal(html) { $("#modal-corpo").innerHTML = html; $("#modal").hidden = false; }
@@ -664,7 +710,10 @@
       });
       msg(el, `Enviando ${regs.length} veículos da aba "${aba}"… (pode levar até 1 minuto)`);
       // a planilha só preenche (célula vazia não apaga o que já está no sistema); troca de condutor entra na linha do tempo
-      for (let i = 0; i < regs.length; i += 150) await api("carga_inicial", { regs: regs.slice(i, i + 150) });
+      for (let i = 0; i < regs.length; i += 100) {
+        msg(el, `Enviando veículos ${i + 1} a ${Math.min(i + 100, regs.length)} de ${regs.length} da aba "${aba}"…`);
+        await api("carga_inicial", { regs: regs.slice(i, i + 100) });
+      }
       const faltou = CAMPOS.filter(f => idx[f.c] === undefined).map(f => f.r);
       msg(el, `✓ ${regs.length} veículos importados da aba "${aba}".` + (novos ? ` ${novos} ${novos === 1 ? "carro novo" : "carros novos"}.` : "") + (trocas ? ` ${trocas} ${trocas === 1 ? "troca" : "trocas"} de condutor ${trocas === 1 ? "registrada" : "registradas"} na linha do tempo.` : " Nenhuma troca de condutor.") + (faltou.length ? " Colunas que não estavam na planilha: " + faltou.join(", ") + "." : " Todas as colunas encontradas."), "ok");
     } catch (err) {
