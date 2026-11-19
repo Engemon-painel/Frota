@@ -90,3 +90,9 @@ main{padding:20px;max-width:1400px;margin:0 auto}
   .filtros input{min-width:0;flex:1}
   .topo{padding:10px 12px}
 }
+
+/* aguardando o Power Automate */
+#barra-carregando{position:fixed;top:0;left:0;height:3px;width:0;background:#f59e0b;z-index:100;transition:width .3s}
+body.ocupado #barra-carregando{width:85%;transition:width 6s ease-out}
+body.ocupado{cursor:progress}
+body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}

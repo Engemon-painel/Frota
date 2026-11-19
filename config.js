@@ -1,9 +1,6 @@
 // =====================================================================
-// CONFIGURAÇÃO — preencha com os dados do Supabase
-// (Supabase > Project Settings > API). Estas duas são PÚBLICAS.
-// NUNCA coloque aqui a chave "service_role" nem a senha do banco.
+// CONFIGURAÇÃO — endereço do fluxo "Frota - API" do Power Automate
 // =====================================================================
 window.FROTA_CONFIG = {
-  SUPABASE_URL: "COLE_AQUI_O_PROJECT_URL",        // ex.: https://abcdefgh.supabase.co
-  SUPABASE_ANON_KEY: "COLE_AQUI_A_CHAVE_ANON_PUBLIC"
+  API_URL: "https://defaultc54e138a79f54294aa9bb004cf8d7f.f7.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/5e94d724906a4a02b4d8d65858b6ae1a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=R9_srDBlcO9Maw-7oAxsqNE9Ph09tiZtJ_WPRxGE0oo"
 };
