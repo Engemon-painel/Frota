@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=4">
+<link rel="stylesheet" href="estilo.css?v=5">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -31,21 +31,55 @@
   <!-- SISTEMA -->
   <section id="tela-app" hidden>
     <header class="topo">
+      <button class="bt-menu" id="bt-menu" aria-label="Abrir menu">☰</button>
       <div class="topo-marca">🚗 Gestão de Frotas</div>
-      <nav class="abas" id="abas">
-        <button class="aba on" data-aba="veiculos">Veículos</button>
-        <button class="aba" data-aba="historico">Histórico de uso</button>
-        <button class="aba" data-aba="ocorrencias">Ocorrências</button>
-        <button class="aba" data-aba="cruzar">Multas e batidas</button>
-        <button class="aba" data-aba="usuarios" data-so-admin hidden>Usuários</button>
-      </nav>
       <div class="topo-user"><span id="user-nome"></span> <span id="user-perfil" class="tag"></span>
         <button class="bt bt-sec" id="bt-sair">Sair</button></div>
     </header>
-
+    <div class="corpo">
+    <aside class="menu" id="menu">
+      <div class="menu-titulo">☰ Menu</div>
+      <button class="mi aba on" data-aba="inicio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Início</span></button>
+      <div class="grupo aberto">
+        <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM8 11h8M8 15h5"/></svg><span>Cadastros</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
+        <div class="sub">
+          <button class="ms aba" data-aba="veiculos">Veículos</button>
+          <button class="ms" data-acao="nova-placa" data-so-admin hidden>+ Nova placa</button>
+          <button class="ms aba" data-aba="usuarios" data-so-admin hidden>Usuários</button>
+          <button class="ms" data-acao="carga" data-so-admin hidden>Carga inicial (planilha)</button>
+        </div>
+      </div>
+      <div class="grupo aberto">
+        <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg><span>Operacional</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
+        <div class="sub">
+          <button class="ms" data-acao="trocar">Trocar condutor</button>
+          <button class="ms aba" data-aba="historico">Histórico de uso</button>
+          <button class="ms aba" data-aba="ocorrencias">Ocorrências</button>
+        </div>
+      </div>
+      <div class="grupo aberto">
+        <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Relatórios</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
+        <div class="sub">
+          <button class="ms aba" data-aba="cruzar">Multas e batidas</button>
+          <button class="ms" data-acao="exportar">Exportar Excel</button>
+        </div>
+      </div>
+    </aside>
     <main>
+      <!-- INÍCIO -->
+      <div id="aba-inicio" class="aba-conteudo">
+        <div class="linha-titulo"><h1>Início</h1><span class="info" id="ini-data"></span></div>
+        <div id="ini-alertas"></div>
+        <div class="kpis" id="ini-kpis"></div>
+        <div class="ini-grade">
+          <div class="painel"><h2>Veículos por contrato</h2><div id="ini-contratos"></div></div>
+          <div class="painel"><h2>Últimas trocas de condutor</h2><ul class="tempo" id="ini-trocas"></ul></div>
+          <div class="painel"><h2>Ocorrências abertas</h2><ul class="tempo" id="ini-ocor"></ul></div>
+        </div>
+      </div>
+
       <!-- VEÍCULOS -->
-      <div id="aba-veiculos" class="aba-conteudo">
+      <div id="aba-veiculos" class="aba-conteudo" hidden>
         <div class="linha-titulo">
           <h1>Veículos</h1>
           <div class="acoes">
@@ -163,6 +197,7 @@
         </div>
       </div>
     </main>
+    </div>
   </section>
 
   <!-- janela (detalhe do veículo, nova ocorrência) -->
@@ -172,6 +207,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
