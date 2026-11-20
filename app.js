@@ -83,7 +83,7 @@
   const dataBr = d => { if (!d) return ""; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(d); };
   const mostrar = (f, v) => v == null || v === "" ? "—" : f.t === "num" ? (f.c === "km_mensal" ? Number(v).toLocaleString("pt-BR") : brl(v)) : f.t === "date" ? dataBr(v) : esc(v);
   let OCORRENCIAS = [];
-  const fofo = { status: "", tipo: "", busca: "" };
+  const fofo = { status: "", tipo: "", busca: "", placas: null, rotulo: "" };
   const TIPOS_OCOR = ["Batida", "Avaria", "Multa", "Roubo/Furto", "Pane mecânica", "Desvio de rota", "Uso fora do horário", "Uso indevido", "Abastecimento irregular", "Outro"];
   const GARAGENS = ["Própria", "Alugada", "Casa do condutor", "Cliente"];
   const dataHora = v => v ? new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -263,32 +263,50 @@
   // ------------------------------------------------------------------ início (resumo)
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
-    const semGar = VEICULOS.filter(v => !v.garagem_tipo).length;
-    const semEq = VEICULOS.filter(v => !v.supervisor || !v.coordenador).length;
-    const abertas = OCORRENCIAS.filter(o => o.status !== "Encerrada");
+    // filtro de gestor e contrato vale para o Início inteiro (carros, ocorrências, multas, trocas e combustível)
+    const g = opSel("#ic-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
+    const ct = opSel("#ic-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).filter(Boolean))).sort(), "Todos os contratos");
+    const V = VEICULOS.filter(v => (!g || v.gestor_operacao === g) && (!ct || v.operacao === ct));
+    const placas = new Set(V.map(v => v.placa));
+    const O = (g || ct) ? OCORRENCIAS.filter(o => placas.has(o.placa)) : OCORRENCIAS;
+    const H = (g || ct) ? HIST.filter(h => placas.has(h.placa)) : HIST;
+    const semGar = V.filter(v => !v.garagem_tipo).length;
+    const semEq = V.filter(v => !v.supervisor || !v.coordenador).length;
+    const abertas = O.filter(o => o.status !== "Encerrada");
     const trinta = Date.now() - 30 * 86400000;
-    const trocas = HIST.filter(h => new Date(h.inicio).getTime() >= trinta && h.origem !== "planilha");
-    const ativos = VEICULOS.filter(v => sem(v.status).startsWith("ativo")).length;
+    const trocas = H.filter(h => new Date(h.inicio).getTime() >= trinta && h.origem !== "planilha");
+    const ativos = V.filter(v => sem(v.status).startsWith("ativo")).length;
+    const hoje = new Date(), mesAt = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
+    const doMesO = O.filter(o => String(o.data_hora || "").slice(0, 7) === mesAt);
+    const multas = doMesO.filter(o => o.tipo === "Multa").length, batidas = doMesO.filter(o => o.tipo === "Batida" || o.tipo === "Avaria").length;
     $("#ini-alertas").innerHTML =
       (semGar ? `<div class="alerta" data-ir="garagem">⚠ <b>${semGar}</b> carros sem o local onde ficam guardados. Clique para preencher.</div>` : "") +
       (semEq && podeSup() ? `<div class="alerta amarelo" data-ir="veiculos">⚠ <b>${semEq}</b> carros sem supervisor ou coordenador.</div>` : "") +
       (abertas.length ? `<div class="alerta amarelo" data-ir="ocorrencias">⚠ <b>${abertas.length}</b> ocorrências abertas aguardando tratativa.</div>` : "");
-    $$("#ini-alertas .alerta").forEach(a => a.addEventListener("click", () => {
-      if (a.dataset.ir === "garagem") { filtro.garagem = "sem"; $("#f-garagem").value = "sem"; irPara("veiculos"); desenhar(); }
-      else irPara(a.dataset.ir);
-    }));
-    const k = [["Veículos", VEICULOS.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"],
-      ["Sem garagem", semGar, semGar ? "#b91c1c" : "#15803d", "veiculos"], ["Ocorrências abertas", abertas.length, abertas.length ? "#b45309" : "#15803d", "ocorrencias"],
+    // ao abrir Veículos ou Ocorrências, leva o mesmo filtro
+    const levar = destino => {
+      if (destino === "veiculos" || destino === "garagem") {
+        filtro.gestor = g; filtro.contrato = ct; $("#f-gestor").value = g; $("#f-contrato").value = ct;
+        if (destino === "garagem") { filtro.garagem = "sem"; $("#f-garagem").value = "sem"; }
+        irPara("veiculos"); desenhar();
+      } else if (destino === "ocorrencias") { fofo.placas = (g || ct) ? placas : null; fofo.rotulo = [g, ct].filter(Boolean).join(" · "); irPara("ocorrencias"); desenharOcorrencias(); }
+      else irPara(destino);
+    };
+    $$("#ini-alertas .alerta").forEach(a => a.addEventListener("click", () => levar(a.dataset.ir)));
+    const k = [["Veículos", V.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"],
+      ["Sem garagem", semGar, semGar ? "#b91c1c" : "#15803d", "garagem"], ["Ocorrências abertas", abertas.length, abertas.length ? "#b45309" : "#15803d", "ocorrencias"],
+      ["Multas no mês", multas, multas ? "#b91c1c" : "#15803d", "ocorrencias"], ["Batidas/avarias no mês", batidas, batidas ? "#b45309" : "#15803d", "ocorrencias"],
       ["Trocas de condutor (30 dias)", trocas.length, "#4338ca", "historico"]];
     $("#ini-kpis").innerHTML = k.map(x => `<div class="kpi" data-ir="${x[3]}" style="border-left-color:${x[2]}"><small>${x[0]}</small><b>${x[1].toLocaleString("pt-BR")}</b></div>`).join("");
-    $$("#ini-kpis .kpi").forEach(el => el.addEventListener("click", () => irPara(el.dataset.ir)));
-    const porC = {}; VEICULOS.forEach(v => { const c = v.operacao || "Sem contrato"; porC[c] = (porC[c] || 0) + 1; });
+    $$("#ini-kpis .kpi").forEach(el => el.addEventListener("click", () => levar(el.dataset.ir)));
+    const porC = {}; V.forEach(v => { const c = v.operacao || "Sem contrato"; porC[c] = (porC[c] || 0) + 1; });
     const cs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]); const mx = Math.max(1, ...cs.map(c => porC[c]));
-    $("#ini-contratos").innerHTML = cs.length ? cs.map(c => `<div class="barra-c"><span title="${esc(c)}">${esc(c)}</span><div class="b" style="width:${porC[c] / mx * 100}%"></div><b>${porC[c]}</b></div>`).join("") : '<p class="info">Nenhum veículo ainda.</p>';
-    $("#ini-trocas").innerHTML = HIST.filter(h => h.origem !== "planilha").slice(0, 8).map(h => `<li><b>${esc(h.placa)}</b><span>${esc(h.condutor)}</span><span class="info">${dataHora(h.inicio)}</span></li>`).join("") || '<li class="info">Nenhuma troca ainda.</li>';
+    $("#ini-contratos").innerHTML = cs.length ? cs.map(c => `<div class="barra-c"><span title="${esc(c)}">${esc(c)}</span><div class="b" style="width:${porC[c] / mx * 100}%"></div><b>${porC[c]}</b></div>`).join("") : '<p class="info">Nenhum veículo com esse filtro.</p>';
+    $("#ini-trocas").innerHTML = H.filter(h => h.origem !== "planilha").slice(0, 8).map(h => `<li><b>${esc(h.placa)}</b><span>${esc(h.condutor)}</span><span class="info">${dataHora(h.inicio)}</span></li>`).join("") || '<li class="info">Nenhuma troca ainda.</li>';
     desenharInicioComb();
     $("#ini-ocor").innerHTML = abertas.slice(0, 8).map(o => `<li><b>${esc(o.placa)} · ${esc(o.tipo)}</b><span>${esc(o.condutor || "condutor não identificado")}</span><span class="info">${dataHora(o.data_hora)}</span></li>`).join("") || '<li class="info">Nenhuma ocorrência aberta.</li>';
   }
+
   function irPara(aba) {
     $$(".aba").forEach(x => x.classList.toggle("on", x.dataset.aba === aba));
     $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + aba; });
@@ -908,7 +926,7 @@
   function desenharInicioComb() {
     const ext = EXTRATO[0];
     $("#ini-comb").hidden = !COMB.length && !CARTOES.length && !ext;
-    $("#ini-comb-filtros").hidden = $("#ini-comb").hidden;
+    $("#ic-cc-txt").hidden = $("#ini-comb").hidden;
     if ($("#ini-comb").hidden) { $("#ini-graf-caixa").hidden = true; return; }
     // só o mês atual
     const hoje = new Date();
@@ -918,8 +936,7 @@
     const ccs = Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort();
     const txtCc = ($("#ic-cc-txt").value || "").trim();
     const cc = ccDoCampo(txtCc);
-    const g = opSel("#ic-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
-    const ct = opSel("#ic-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).filter(Boolean))).sort(), "Todos os contratos");
+    const g = $("#ic-gestor").value, ct = $("#ic-contrato").value;
     const filtroIni = x => bateCC(x.centro_custo, cc) && bateDono(x.placa, x, g, ct);
     const rs = doMes.filter(filtroIni);
     const litros = rs.reduce((a, x) => a + n0(x.litros), 0);
@@ -993,7 +1010,7 @@
   }
   $("#ini-graf-caixa").addEventListener("click", e => e.stopPropagation());
 
-  ["#ic-gestor", "#ic-contrato"].forEach(id => $(id).addEventListener("change", () => desenharInicioComb()));
+  ["#ic-gestor", "#ic-contrato"].forEach(id => $(id).addEventListener("change", () => desenharInicio()));
   $("#ic-cc-txt").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc-txt").addEventListener("input", () => desenharInicioComb());
   $$("#ini-comb [data-ir]").forEach(el => el.addEventListener("click", () => {
@@ -1043,9 +1060,10 @@
   $("#o-busca").addEventListener("input", e => { fofo.busca = sem(e.target.value); desenharOcorrencias(); });
   const COR_OCOR = { "Aberta": "#b91c1c", "Em tratativa": "#b45309", "Encerrada": "#15803d" };
   function desenharOcorrencias() {
-    const l = OCORRENCIAS.filter(o => (!fofo.status || o.status === fofo.status) && (!fofo.tipo || o.tipo === fofo.tipo) &&
+    const l = OCORRENCIAS.filter(o => (!fofo.placas || fofo.placas.has(o.placa)) && (!fofo.status || o.status === fofo.status) && (!fofo.tipo || o.tipo === fofo.tipo) &&
       (!fofo.busca || sem([o.placa, o.condutor, o.descricao, o.local, o.registrado_por].join(" ")).includes(fofo.busca)));
-    $("#o-info").textContent = `${l.length} de ${OCORRENCIAS.length} ocorrências`;
+    $("#o-info").innerHTML = `${l.length} de ${OCORRENCIAS.length} ocorrências` + (fofo.placas ? ` · só ${esc(fofo.rotulo)} <button class="link" id="o-tirar">tirar filtro</button>` : "");
+    if (fofo.placas) $("#o-tirar").addEventListener("click", () => { fofo.placas = null; fofo.rotulo = ""; desenharOcorrencias(); });
     $("#tb-ocorrencias").innerHTML = l.length ? l.map(o => `<tr class="clica" data-id="${o.id}">
       <td>${dataHora(o.data_hora)}</td><td><b>${esc(o.placa)}</b></td><td>${esc(o.tipo)}</td><td>${esc(o.condutor) || "não identificado"}</td>
       <td>${esc(o.local) || "—"}</td><td style="white-space:normal;min-width:240px">${esc(o.descricao)}</td>
