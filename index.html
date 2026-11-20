@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=18">
+<link rel="stylesheet" href="estilo.css?v=19">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -176,10 +176,10 @@
         <div class="linha-titulo"><h1>Consumo de combustível</h1>
           <div class="acoes">
             <label class="info" data-so-admin hidden>Mês da planilha <input id="cb-mes-up" type="month"></label>
-            <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir arquivos (consumo e extrato)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
+            <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir arquivos (consumo, extrato, transações)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
             <button class="bt bt-sec" id="bt-comb-exp">⬇ Baixar Excel</button>
           </div></div>
-        <p class="nota">Suba o relatório de consumo da Ticket Log (uma linha por placa e combustível) e escolha o mês — ou o <b>Extrato Simplificado</b> (limite do contrato e saldo dos cartões); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
+        <p class="nota">Suba o relatório de consumo (escolha o mês), o <b>Extrato Simplificado</b> (saldo dos cartões) ou a base de <b>transações</b> (cada abastecimento com data e motorista); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
         <p id="cb-msg" class="msg"></p><div id="cb-msgs"></div>
         <div class="filtros">
           <select id="cb-mes"></select>
@@ -193,6 +193,11 @@
           <span id="cb-info" class="info"></span>
         </div>
         <div class="kpis" id="cb-kpis"></div>
+        <div id="cb-trans-caixa" hidden>
+          <h2 class="sub-titulo">⛽ Alertas de abastecimento <span class="info" id="cb-trans-info"></span></h2>
+          <div class="chips" id="cb-trans-kpis"></div>
+          <div class="tabela-caixa cc-caixa"><table class="tabela tab-trans"><thead><tr><th>Data</th><th>Placa</th><th>Motorista</th><th class="num">Abastec.</th><th class="num">Litros no dia</th><th class="num">Valor no dia</th><th>Horário · litros · posto</th><th>Alerta</th></tr></thead><tbody id="tb-trans"></tbody></table></div>
+        </div>
         <h2 class="sub-titulo">Gasto por centro de custo <span class="info">clique para filtrar</span></h2>
         <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Centro de custo</th><th class="num">Carros</th><th class="num">Litros</th><th class="num">Km rodados</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">% do gasto</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
         <h2 class="sub-titulo">Consumo e cartão por placa <span class="info" id="cb-uni-info"></span> <span class="info" id="cb-cor-info"></span></h2>
@@ -281,6 +286,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>
