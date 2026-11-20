@@ -248,10 +248,15 @@
     sel.innerHTML = `<option value="">${esc(primeiro)}</option>` + valores.map(v => `<option>${esc(v)}</option>`).join("");
     sel.value = valores.includes(atual) ? atual : "";
   }
+  // gestor × contrato em cascata: escolhendo o gestor, a lista de contratos mostra só os dele (e vice-versa)
+  const uniqDe = (lista, campo) => Array.from(new Set(lista.map(v => String(v[campo] || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const contratosDo = g => uniqDe(VEICULOS.filter(v => !g || String(v.gestor_operacao || "").trim() === g), "operacao");
+  const gestoresDo = c => uniqDe(VEICULOS.filter(v => !c || String(v.operacao || "").trim() === c), "gestor_operacao");
   const unicos = campo => Array.from(new Set(VEICULOS.map(v => (v[campo] || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR"));
   function montarFiltros() {
-    opcoes($("#f-contrato"), unicos("operacao"), "Todos os contratos");
-    opcoes($("#f-gestor"), unicos("gestor_operacao"), "Todos os gestores");
+    opcoes($("#f-contrato"), contratosDo($("#f-gestor").value), "Todos os contratos");
+    opcoes($("#f-gestor"), gestoresDo($("#f-contrato").value), "Todos os gestores");
+    filtro.contrato = $("#f-contrato").value; filtro.gestor = $("#f-gestor").value;
     opcoes($("#f-status"), unicos("status"), "Todos os status");
     const dl = (id, campos, extra) => { $(id).innerHTML = Array.from(new Set([].concat(...campos.map(unicos), extra || []))).sort((a, b) => a.localeCompare(b, "pt-BR")).map(v => `<option value="${esc(v)}">`).join(""); };
     dl("#dl-operacao", ["operacao"]); dl("#dl-gestor", ["gestor_operacao"]);
@@ -261,7 +266,7 @@
     $("#lista-equipes").innerHTML = Array.from(new Set(unicos("gestor_operacao").concat(unicos("coordenador"), unicos("supervisor")))).map(v => `<option value="${esc(v)}">`).join("");
   }
   [["#f-contrato", "contrato"], ["#f-gestor", "gestor"], ["#f-status", "status"]].forEach(([id, k]) =>
-    $(id).addEventListener("change", e => { filtro[k] = e.target.value; desenhar(); }));
+    $(id).addEventListener("change", e => { filtro[k] = e.target.value; if (k !== "status") montarFiltros(); desenhar(); }));
   $("#f-busca").addEventListener("input", e => { filtro.busca = sem(e.target.value); desenhar(); });
   $("#f-garagem").addEventListener("change", e => { filtro.garagem = e.target.value; desenhar(); });
 
@@ -317,8 +322,8 @@
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
     // filtro de gestor e contrato vale para o Início inteiro (carros, ocorrências, multas, trocas e combustível)
-    const g = opSel("#ic-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
-    const ct = opSel("#ic-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).filter(Boolean))).sort(), "Todos os contratos");
+    const g = opSel("#ic-gestor", gestoresDo($("#ic-contrato").value), "Todos os gestores");
+    const ct = opSel("#ic-contrato", contratosDo(g), "Todos os contratos");
     const V = VEICULOS.filter(v => (!g || v.gestor_operacao === g) && (!ct || v.operacao === ct));
     const placas = new Set(V.map(v => v.placa));
     const O = (g || ct) ? OCORRENCIAS.filter(o => placas.has(o.placa)) : OCORRENCIAS;
@@ -606,7 +611,7 @@
   // relatório da Ticket Log: uma linha por placa e combustível no mês. Cada placa fica ligada ao condutor
   // do mês (linha do tempo); carros coringa ficam numa tabela à parte.
   let COMB = [], EXTRATO = [], CARTOES = [];
-  const fcb = { mes: "", gestor: "", contrato: "", comb: "", cc: "", busca: "", alerta: false };
+  const fcb = { mes: "", gestor: "", contrato: "", comb: "", cc: "", busca: "", alerta: false, difnome: false };
   const numBR = v => {
     if (typeof v === "number") return v;
     let t = String(v == null ? "" : v).replace(/R\$|\s/g, "");
@@ -726,21 +731,24 @@
     $("#cb-mes").value = fcb.mes;
     const op = (id, lista, todos) => { const v = $(id).value; $(id).innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); $(id).value = lista.indexOf(v) >= 0 ? v : ""; };
     const doMes = COMB.filter(x => x.mes === fcb.mes);
-    op("#cb-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).concat(doMes.map(x => x.gestor_operacao)).filter(Boolean))).sort(), "Todos os gestores");
-    op("#cb-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).concat(doMes.map(x => x.operacao)).filter(Boolean))).sort(), "Todos os contratos");
+    op("#cb-gestor", gestoresDo($("#cb-contrato").value), "Todos os gestores");
+    op("#cb-contrato", contratosDo($("#cb-gestor").value), "Todos os contratos");
     fcb.contrato = $("#cb-contrato").value;
     op("#cb-comb", Array.from(new Set(doMes.map(x => x.combustivel).filter(Boolean))).sort(), "Todos os combustíveis");
     atualizarListaCC();
     fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = ccDoCampo($("#cb-cc-txt").value);
   }
   $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); });
-  $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; desenharComb(); });
-  $("#cb-contrato").addEventListener("change", e => { fcb.contrato = e.target.value; desenharComb(); });
+  $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; montarFiltrosComb(); desenharComb(); });
+  $("#cb-contrato").addEventListener("change", e => { fcb.contrato = e.target.value; montarFiltrosComb(); desenharComb(); });
   $("#cb-comb").addEventListener("change", e => { fcb.comb = e.target.value; desenharComb(); });
   $("#cb-cc-txt").addEventListener("input", e => { fcb.cc = ccDoCampo(e.target.value); desenharComb(); });
   $("#tb-cc").addEventListener("click", e => { const tr = e.target.closest("tr[data-cc]"); if (!tr) return; fcb.cc = fcb.cc === tr.dataset.cc ? "" : tr.dataset.cc; $("#cb-cc-txt").value = fcb.cc; desenharComb(); });
   $("#cb-busca").addEventListener("input", e => { fcb.busca = sem(e.target.value); desenharComb(); });
   $("#cb-alerta").addEventListener("change", e => { fcb.alerta = e.target.checked; desenharComb(); });
+  $("#cb-difnome").addEventListener("change", e => { fcb.difnome = e.target.checked; desenharComb(); });
+  // responsável do cartão (Ticket Log) diferente do condutor da base de veículos
+  const nomeDiferente = p => !!(p.cartao && p.cartao.responsavel && p.condutor && sem(p.cartao.responsavel) !== sem(p.condutor));
 
   // junta as linhas de cada placa (gasolina + etanol) e marca alerta de consumo
   function consumoPorPlaca() {
@@ -794,12 +802,13 @@
       p.pct = p.limiteC > 0 ? p.utilC / p.limiteC * 100 : 0;
       if (!p.modelo) p.modelo = c.modelo;
     });
-    const todas = Array.from(porPlaca.values());
-    const cond = todas.filter(p => !p.coringa).sort((a, b) => (a.condutor ? 0 : 1) - (b.condutor ? 0 : 1) || sem(a.condutor).localeCompare(sem(b.condutor)) || a.placa.localeCompare(b.placa));
+    const todas = Array.from(porPlaca.values()).filter(p => !fcb.difnome || nomeDiferente(p));
+    const nomeP = p => (p.cartao && p.cartao.responsavel) || p.condutor || "";
+    const cond = todas.filter(p => !p.coringa).sort((a, b) => (nomeP(a) ? 0 : 1) - (nomeP(b) ? 0 : 1) || sem(nomeP(a)).localeCompare(sem(nomeP(b))) || a.placa.localeCompare(b.placa));
     const cor = todas.filter(p => p.coringa).sort((a, b) => a.placa.localeCompare(b.placa));
     return { lista, cond, cor };
   }
-  const CAB_UNI = () => `<tr><th>Condutor</th><th>Placa</th><th>Modelo · combustível</th><th>Gestor · contrato</th><th>Centro de custo</th>
+  const CAB_UNI = () => `<tr><th title="Responsável do cartão na Ticket Log; embaixo, o condutor da base de veículos quando for outra pessoa">Quem abastece</th><th>Placa</th><th>Modelo · combustível</th><th>Gestor · contrato</th><th>Centro de custo</th>
     <th class="num" title="Km rodados no mês (embaixo: odômetro)">Km</th><th class="num">Litros</th><th class="num">R$/L</th><th class="num">Km/L</th><th class="num">Consumo</th>
     <th class="num" title="Utilizado no cartão (embaixo: limite)">Cartão</th><th class="num" title="Saldo do cartão">Saldo</th><th class="num">% uso</th></tr>`;
   const NCOL = 13;
@@ -809,8 +818,9 @@
     const s = l.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total, li: a.li + (p.limiteC || 0), u: a.u + (p.utilC || 0), sa: a.sa + (p.saldoC || 0) }), { km: 0, l: 0, t: 0, li: 0, u: 0, sa: 0 });
     return l.map(p => {
       const c = p.cartao || {};
-      const resp = c.responsavel && dif(p.condutor, c.responsavel) ? `<small class="resp">Ticket Log: ${esc(c.responsavel)}</small>` : "";
-      const nome = p.condutor || c.responsavel || (p.coringa ? "Cartão coringa" : "Sem condutor na base");
+      // nome principal = quem abastece (responsável do cartão na Ticket Log); embaixo, o condutor da base se for outro
+      const resp = c.responsavel && p.condutor && dif(p.condutor, c.responsavel) ? `<small class="resp">condutor na base: ${esc(p.condutor)}</small>` : "";
+      const nome = c.responsavel || p.condutor || (p.coringa ? "Cartão coringa" : "Sem condutor na base");
       const ccC = c.centro_custo || "", ccR = p.cc || "";
       const ccTxt = dif(ccR, ccC) ? `${esc(ccR)}<small class="resp">no extrato: ${esc(ccC)}</small>` : esc(ccR || ccC);
       const pct = p.cartao ? p.pct : null;
@@ -833,7 +843,7 @@
     const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
     const k = (t, v, cor2) => `<div class="kpi"${cor2 ? ` style="border-left-color:${cor2}"` : ""}><small>${t}</small><b>${v}</b></div>`;
     $("#cb-kpis").innerHTML = k("Gasto no mês", "R$ " + fmtN(tot.t, 2)) + k("Litros", fmtN(tot.l)) + k("Km rodados", fmtN(tot.km)) + k("Km/L médio", fmtN(tot.l ? tot.km / tot.l : null, 2))
-      + k("Carros com condutor", cond.length) + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", cond.concat(cor).filter(p => p.alerta || (p.cartao && p.pct >= 90)).length, "#b91c1c");
+      + k("Carros com condutor", cond.length) + k("Nome diferente da base", `${cond.filter(nomeDiferente).length} de ${cond.filter(p => p.cartao && p.condutor).length}`, "#ea580c") + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", cond.concat(cor).filter(p => p.alerta || (p.cartao && p.pct >= 90)).length, "#b91c1c");
     // uma tabela só: condutores e, no fim, a seção dos coringas
     $("#tb-comb").innerHTML = linhasUni(cond, "Nenhum carro com esse filtro.")
       + (cor.length ? `<tr class="secao"><td colspan="${NCOL}">Coringa · ${cor.length} ${cor.length === 1 ? "cartão" : "cartões"}</td></tr>` + linhasUni(cor, "") : "");
@@ -859,7 +869,7 @@
     const lista = cond.concat(cor);
     if (!lista.length) return msg($("#cb-msg"), "Nada para baixar com esse filtro.", "erro");
     const r2 = v => v == null ? null : Math.round(v * 100) / 100;
-    const linha = p => { const c = p.cartao || {}; return { "Mês": nomeMes(fcb.mes), "Condutor (base)": p.condutor, "Responsável Ticket Log": c.responsavel || "", "Placa": p.placa, "Modelo": p.modelo,
+    const linha = p => { const c = p.cartao || {}; return { "Mês": nomeMes(fcb.mes), "Quem abastece (Ticket Log)": c.responsavel || "", "Condutor na base de veículos": p.condutor, "Placa": p.placa, "Modelo": p.modelo,
       "Combustível": p.combs.join(" + "), "Gestor operação": p.gestor, "Contrato": p.operacao, "Centro de custo (consumo)": p.cc, "Centro de custo (extrato)": c.centro_custo || "",
       "Odômetro (última km)": p.odo || null, "Km rodados": p.temConsumo ? p.km : null, "Litros": p.temConsumo ? r2(p.litros) : null, "R$/litro": r2(p.rsl), "Km/L": r2(p.kml), "Consumo R$": p.temConsumo ? r2(p.total) : null,
       "Cartão": c.cartao || "", "Limite cartão": p.cartao ? p.limiteC : null, "Utilizado cartão": p.cartao ? p.utilC : null, "Saldo cartão": p.cartao ? p.saldoC : null,
