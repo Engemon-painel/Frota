@@ -140,6 +140,7 @@
     HIST = (d.historico || []).filter(h => h.placa).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
     OCORRENCIAS = (d.ocorrencias || []).filter(o => o.placa).map(o => Object.assign(o, { id: Number(o.id) })).sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
     USUARIOS = d.usuarios || [];
+    HIER = (d.hierarquia || []).filter(h => h.colaborador).sort((a, b) => sem(a.colaborador).localeCompare(sem(b.colaborador)));
     COMB = (d.combustivel || []).filter(x => x.placa && x.mes);
     EXTRATO = d.extrato || [];
     CARTOES = (d.cartoes || []).filter(x => x.cartao || x.placa);
@@ -147,6 +148,7 @@
       $("#user-nome").textContent = EU.nome;
       $("#user-perfil").textContent = { admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[EU.perfil] || EU.perfil;
       $$("[data-so-admin]").forEach(el => { el.hidden = EU.perfil !== "admin"; });
+      $$("[data-so-gerente]").forEach(el => { el.hidden = EU.perfil !== "admin" && EU.perfil !== "gerente"; });
       $("#tela-login").hidden = true; $("#tela-app").hidden = false;
     }
     montarFiltros(); desenhar();
@@ -156,7 +158,7 @@
     if (!$("#h-q-data").value) $("#h-q-data").value = paraInput(new Date());
     $("#dl-pessoas").innerHTML += Array.from(new Set(HIST.map(h => h.condutor))).map(c => `<option value="${esc(c)}">`).join("");
     desenharOcorrencias(); desenharHistorico(); desenharInicio();
-    montarFiltrosComb(); desenharComb();
+    montarFiltrosComb(); desenharComb(); desenharHier();
     if (EU.perfil === "admin") desenharUsuarios();
   }
   if (SESSAO && SESSAO.token) entrar(); else mostrarLogin("");
@@ -170,6 +172,7 @@
     const a = b.dataset.acao;
     if (a === "nova-placa") $("#bt-novo-veic").click();
     else if (a === "carga") $("#arq-frota").click();
+    else if (a === "organograma") $("#bt-org").click();
     else if (a === "trocar") $("#bt-trocar").click();
     else if (a === "exportar") $("#bt-exportar").click();
   }));
@@ -1018,6 +1021,203 @@
     $("#cb-gestor").value = $("#ic-gestor").value; $("#cb-contrato").value = $("#ic-contrato").value; $("#cb-cc-txt").value = $("#ic-cc-txt").value;
     montarFiltrosComb(); desenharComb(); irPara("combustivel");
   }));
+
+  // ------------------------------------------------------------------ hierarquia (De-Para)
+  let HIER = [];
+  const fhi = { gerente: "", coord: "", sup: "", busca: "" };
+  const podeHier = h => EU && (EU.perfil === "admin" || (EU.perfil === "gerente" && sem(h.gerente) === sem(EU.gestor_operacao)));
+  function desenharHier() {
+    const uniq = k => Array.from(new Set(HIER.map(h => h[k]).filter(Boolean))).sort((a, b) => sem(a).localeCompare(sem(b)));
+    fhi.gerente = opSel("#hi-gerente", uniq("gerente"), "Todos os gerentes");
+    fhi.coord = opSel("#hi-coord", uniq("coordenador"), "Todos os coordenadores");
+    fhi.sup = opSel("#hi-sup", uniq("supervisor"), "Todos os supervisores");
+    $("#dl-hi-sup").innerHTML = uniq("supervisor").map(x => `<option value="${esc(x)}">`).join("");
+    $("#dl-hi-coord").innerHTML = uniq("coordenador").map(x => `<option value="${esc(x)}">`).join("");
+    $("#dl-hi-ger").innerHTML = Array.from(new Set(uniq("gerente").concat(VEICULOS.map(v => v.gestor_operacao).filter(Boolean)))).sort().map(x => `<option value="${esc(x)}">`).join("");
+    const carro = {}; VEICULOS.forEach(v => { if (v.condutor) (carro[sem(v.condutor)] = carro[sem(v.condutor)] || []).push(v.placa); });
+    const l = HIER.filter(h => (!fhi.gerente || h.gerente === fhi.gerente) && (!fhi.coord || h.coordenador === fhi.coord) && (!fhi.sup || h.supervisor === fhi.sup)
+      && (!fhi.busca || sem([h.colaborador, h.matricula, h.supervisor, h.coordenador, h.gerente, (carro[sem(h.colaborador)] || []).join(" ")].join(" ")).includes(fhi.busca)));
+    const comCarro = l.filter(h => carro[sem(h.colaborador)]).length;
+    $("#hi-info").textContent = `${l.length} colaboradores · ${comCarro} com carro`;
+    $("#tb-hier").innerHTML = l.slice(0, 1500).map(h => `<tr><td><b>${esc(h.colaborador)}</b></td><td>${esc(h.matricula)}</td><td>${esc(h.supervisor)}</td><td>${esc(h.coordenador)}</td><td>${esc(h.gerente)}</td>
+      <td>${(carro[sem(h.colaborador)] || []).map(p => `<span class="tag">${esc(p)}</span>`).join(" ") || '<span class="info">—</span>'}</td>
+      <td class="info">${esc(h.atualizado_por || "")}${h.atualizado_em ? " · " + dataHora(h.atualizado_em) : ""}</td>
+      <td>${podeHier(h) ? `<button class="link" data-hi-ed="${esc(h.colaborador)}">Editar</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="8" class="info">${HIER.length ? "Ninguém com esse filtro." : "Nenhuma hierarquia ainda. Suba o De-Para ou adicione os colaboradores."}</td></tr>`;
+  }
+  [["#hi-gerente", "gerente"], ["#hi-coord", "coord"], ["#hi-sup", "sup"]].forEach(([id, k]) => $(id).addEventListener("change", e => { fhi[k] = e.target.value; desenharHier(); }));
+  $("#hi-busca").addEventListener("input", e => { fhi.busca = sem(e.target.value); desenharHier(); });
+  async function salvarHier(regs, el) {
+    const r = await api("salvar_hierarquia", { regs });
+    const x = r.r || {};
+    msg(el, `✓ ${x.gravados || 0} colaboradores gravados${x.apagados ? `, ${x.apagados} excluídos` : ""} · ${x.carros || 0} carros com supervisor/coordenador atualizados.`, "ok");
+  }
+  function editarHier(h) {
+    const novo = !h; h = h || { colaborador: "", matricula: "", supervisor: "", coordenador: "", gerente: EU.perfil === "gerente" ? EU.gestor_operacao : "" };
+    abrirModal(`<h2>${novo ? "Adicionar colaborador" : esc(h.colaborador)}</h2>
+      <div class="campos">
+        <label class="larga">Colaborador (nome igual ao do condutor do carro)<input id="hx-col" value="${esc(h.colaborador)}" list="dl-pessoas" ${novo ? "" : "readonly"}></label>
+        <label>Matrícula<input id="hx-mat" value="${esc(h.matricula)}"></label>
+        <label>Supervisor<input id="hx-sup" value="${esc(h.supervisor)}" list="dl-hi-sup"></label>
+        <label>Coordenador<input id="hx-coord" value="${esc(h.coordenador)}" list="dl-hi-coord"></label>
+        <label>Gerente<input id="hx-ger" value="${esc(h.gerente)}" list="dl-hi-ger" ${EU.perfil === "gerente" ? "readonly" : ""}></label>
+      </div>
+      <div class="linha-bt"><button class="bt bt-pri" id="hx-ok">Gravar</button>${novo ? "" : '<button class="bt bt-sec" id="hx-del">Excluir</button>'}<span class="msg" id="hx-msg"></span></div>`);
+    $("#hx-ok").addEventListener("click", async () => {
+      const reg = { colaborador: $("#hx-col").value.trim(), matricula: $("#hx-mat").value.trim(), supervisor: $("#hx-sup").value.trim(), coordenador: $("#hx-coord").value.trim(), gerente: $("#hx-ger").value.trim() };
+      if (!reg.colaborador) return msg($("#hx-msg"), "Digite o nome do colaborador.", "erro");
+      try { await salvarHier([reg], $("#hi-msg")); fecharModal(); } catch (e) { msg($("#hx-msg"), e.message, "erro"); }
+    });
+    if (!novo) $("#hx-del").addEventListener("click", async () => {
+      if (!window.confirm("Excluir " + h.colaborador + " da hierarquia?")) return;
+      try { await salvarHier([{ colaborador: h.colaborador, apagar: true }], $("#hi-msg")); fecharModal(); } catch (e) { msg($("#hx-msg"), e.message, "erro"); }
+    });
+  }
+  $("#bt-hi-novo").addEventListener("click", () => editarHier(null));
+  $("#tb-hier").addEventListener("click", e => { const b = e.target.closest("[data-hi-ed]"); if (b) editarHier(HIER.find(h => h.colaborador === b.dataset.hiEd)); });
+  // De-Para: colunas Colaborador/Nome, Supervisor, Coordenador, Gerente (Matrícula opcional), cabeçalho em qualquer linha
+  $("#arq-hier").addEventListener("change", async e => {
+    const arq = e.target.files[0]; e.target.value = "";
+    if (!arq) return;
+    const el = $("#hi-msg");
+    try {
+      msg(el, "Lendo " + arq.name + "…");
+      const wb = XLSX.read(await arq.arrayBuffer(), { type: "array" });
+      const regs = [];
+      const nomeCol = h => ["colaborador", "nome", "funcionario", "tecnico", "nome do colaborador", "nome colaborador", "condutor", "colaboradores"].includes(h);
+      wb.SheetNames.forEach(nome => {
+        const m = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: false });
+        const r0 = m.slice(0, 30).findIndex(l => l.some(c => nomeCol(sem(c))) && l.some(c => /^(supervisor|coordenador|gerente|gestor)/.test(sem(c))));
+        if (r0 < 0) return;
+        const cab = m[r0].map(sem), col = t => cab.findIndex(t);
+        const ix = { colaborador: col(nomeCol), matricula: col(h => h.startsWith("matricula") || h === "re"), supervisor: col(h => h.startsWith("supervisor")),
+          coordenador: col(h => h.startsWith("coordenador")), gerente: col(h => h.startsWith("gerente") || h.startsWith("gestor")) };
+        m.slice(r0 + 1).forEach(l => {
+          const t = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).replace(/\s+/g, " ").trim() : "";
+          if (!t("colaborador")) return;
+          const reg = { colaborador: t("colaborador") };
+          ["matricula", "supervisor", "coordenador", "gerente"].forEach(k => { if (ix[k] >= 0) reg[k] = t(k); });
+          regs.push(reg);
+        });
+      });
+      if (!regs.length) return msg(el, "Não achei as colunas Colaborador (ou Nome) e Supervisor/Coordenador/Gerente na planilha.", "erro");
+      const gerentes = Array.from(new Set(regs.map(r => r.gerente).filter(Boolean)));
+      if (!window.confirm(`${regs.length} colaboradores na planilha${gerentes.length ? " (gerente: " + gerentes.slice(0, 3).join(", ") + (gerentes.length > 3 ? "…" : "") + ")" : ""}. Gravar na hierarquia?`)) return msg(el, "");
+      const tot = { gravados: 0, carros: 0 };
+      for (let i = 0; i < regs.length; i += 300) {
+        msg(el, `Gravando ${i + 1} a ${Math.min(i + 300, regs.length)} de ${regs.length}…`);
+        const r = await api("salvar_hierarquia", { regs: regs.slice(i, i + 300) });
+        tot.gravados += (r.r && r.r.gravados) || 0; tot.carros += (r.r && r.r.carros) || 0;
+      }
+      msg(el, `✓ ${tot.gravados} colaboradores gravados · ${tot.carros} carros com supervisor/coordenador atualizados.`, "ok");
+    } catch (err) { msg(el, "Erro ao subir: " + (err.message || err), "erro"); }
+  });
+  $("#bt-hi-exp").addEventListener("click", () => {
+    const carro = {}; VEICULOS.forEach(v => { if (v.condutor) (carro[sem(v.condutor)] = carro[sem(v.condutor)] || []).push(v.placa); });
+    const ws = XLSX.utils.json_to_sheet(HIER.map(h => ({ "Colaborador": h.colaborador, "Matrícula": h.matricula, "Supervisor": h.supervisor, "Coordenador": h.coordenador,
+      "Gerente": h.gerente, "Carro": (carro[sem(h.colaborador)] || []).join(", "), "Atualizado por": h.atualizado_por })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Hierarquia"); XLSX.writeFile(wb, "Hierarquia_frota.xlsx");
+  });
+
+  // ------------------------------------------------------------------ preencher supervisor e coordenador pelo Organograma
+  // fonte 1: o Organograma que o Painel SLA já publica (mesmo endereço do site); fonte 2: a planilha do Organograma
+  async function colaboradoresDoPainel() {
+    for (const url of ["../Painel-SLA/dados.json", "/Painel-SLA/dados.json"]) {
+      try {
+        const r = await fetch(url + "?t=" + Date.now(), { cache: "no-store" });
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (d && Array.isArray(d.colaboradores) && d.colaboradores.length) return d.colaboradores;
+      } catch (e) { /* tenta a próxima */ }
+    }
+    return null;
+  }
+  function colaboradoresDaPlanilha(wb) {
+    const out = [];
+    const abas = wb.SheetNames.filter(n => /organograma|pj/i.test(n));
+    (abas.length ? abas : wb.SheetNames).forEach(nome => {
+      const m = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
+      const r0 = m.slice(0, 30).findIndex(l => l.some(c => sem(c) === "nome") && l.some(c => sem(c).startsWith("supervisor")));
+      if (r0 < 0) return;
+      const cab = m[r0].map(sem), col = t => cab.findIndex(t);
+      const ix = { nome: col(h => h === "nome"), matricula: col(h => h.startsWith("matricula")), placa: col(h => h.startsWith("placa")),
+        supervisor: col(h => h.startsWith("supervisor")), coordenador: col(h => h.startsWith("coordenador")), demissao: col(h => h.includes("demiss")), status: col(h => h === "status" || h.startsWith("situacao")) };
+      m.slice(r0 + 1).forEach(l => {
+        const t = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).trim() : "";
+        if (!t("nome")) return;
+        out.push({ nome: t("nome"), matricula: t("matricula"), placa: t("placa"), supervisor: t("supervisor"), coordenador: t("coordenador"),
+          ativo: !t("demissao") && !/deslig|demit|inativ/i.test(t("status")) });
+      });
+    });
+    return out;
+  }
+  function casarOrganograma(colabs) {
+    const limpaPl = p => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const limpaMat = m => String(m || "").replace(/\D/g, "").replace(/^0+/, "");
+    const ord = colabs.slice().sort((a, b) => (b.ativo === false ? 0 : 1) - (a.ativo === false ? 0 : 1));   // ativos primeiro
+    const porPlaca = new Map(), porMat = new Map(), porNome = new Map();
+    ord.forEach(c => {
+      if (!c.supervisor && !c.coordenador) return;
+      const pl = limpaPl(c.placa), mt = limpaMat(c.matricula), nm = sem(c.nome);
+      if (pl.length >= 6 && !porPlaca.has(pl)) porPlaca.set(pl, c);
+      if (mt && !porMat.has(mt)) porMat.set(mt, c);
+      if (nm && !porNome.has(nm)) porNome.set(nm, c);
+    });
+    return VEICULOS.map(v => {
+      // liga só pelo nome do condutor ou pela matrícula (a placa do Organograma não é usada)
+      const c = porNome.get(sem(v.condutor)) || porMat.get(limpaMat(v.matricula_sra));
+      if (!c) return null;
+      const como = porNome.get(sem(v.condutor)) === c ? "nome do condutor" : "matrícula";
+      return { placa: v.placa, condutor: v.condutor, colab: c.nome, como, supAtual: v.supervisor || "", coordAtual: v.coordenador || "",
+        supNovo: String(c.supervisor || "").replace(/\s+/g, " ").trim(), coordNovo: String(c.coordenador || "").replace(/\s+/g, " ").trim() };
+    }).filter(Boolean);
+  }
+  function mostrarOrganograma(colabs, fonte) {
+    const casados = casarOrganograma(colabs);
+    const muda = (x, sub) => sub ? ((x.supNovo && sem(x.supNovo) !== sem(x.supAtual)) || (x.coordNovo && sem(x.coordNovo) !== sem(x.coordAtual)))
+      : ((!x.supAtual && x.supNovo) || (!x.coordAtual && x.coordNovo));
+    const desenha = () => {
+      const sub = $("#org-sub").checked;
+      const l = casados.filter(x => muda(x, sub));
+      $("#org-res").textContent = `${casados.length} de ${VEICULOS.length} carros encontrados no Organograma · ${l.length} vão mudar`;
+      $("#org-tb").innerHTML = l.slice(0, 400).map(x => `<tr><td><b>${esc(x.placa)}</b></td><td>${esc(x.condutor)}<small class="resp">achado por ${x.como}</small></td>
+        <td>${esc(x.supAtual || "—")} → <b>${esc(sub || !x.supAtual ? x.supNovo || x.supAtual : x.supAtual)}</b></td>
+        <td>${esc(x.coordAtual || "—")} → <b>${esc(sub || !x.coordAtual ? x.coordNovo || x.coordAtual : x.coordAtual)}</b></td></tr>`).join("") || '<tr><td colspan="4" class="info">Nada para mudar.</td></tr>';
+      $("#org-gravar").disabled = !l.length;
+      return l;
+    };
+    const semAchar = VEICULOS.length - casados.length;
+    abrirModal(`<h2>Preencher pelo Organograma</h2>
+      <p class="nota">Fonte: ${esc(fonte)} (${colabs.length} colaboradores). Cada carro é ligado ao colaborador pelo <b>nome do condutor</b> ou pela <b>matrícula</b> e recebe o supervisor e o coordenador dele.${semAchar ? ` ${semAchar} carros não foram encontrados (condutor coringa, uso coletivo ou nome diferente).` : ""}</p>
+      <label class="info"><input type="checkbox" id="org-sub"> também trocar quem já tem supervisor/coordenador diferente do Organograma</label>
+      <p class="info" id="org-res"></p>
+      <div class="tabela-caixa" style="max-height:50vh"><table class="tabela"><thead><tr><th>Placa</th><th>Condutor</th><th>Supervisor</th><th>Coordenador</th></tr></thead><tbody id="org-tb"></tbody></table></div>
+      <div class="linha-bt"><button class="bt bt-pri" id="org-gravar">Gravar</button><span class="msg" id="org-msg"></span></div>`);
+    desenha();
+    $("#org-sub").addEventListener("change", desenha);
+    $("#org-gravar").addEventListener("click", async () => {
+      const sub = $("#org-sub").checked;
+      const regs = desenha().map(x => ({ placa: x.placa, supervisor: sub || !x.supAtual ? x.supNovo : "", coordenador: sub || !x.coordAtual ? x.coordNovo : "" }));
+      $("#org-gravar").disabled = true; msg($("#org-msg"), "Gravando " + regs.length + " carros…");
+      try { const r = await api("salvar_equipes", { regs }); msg($("#org-msg"), `✓ ${(r.r && r.r.alterados) || 0} carros atualizados.`, "ok"); desenha(); }
+      catch (e) { msg($("#org-msg"), e.message, "erro"); $("#org-gravar").disabled = false; }
+    });
+  }
+  $("#bt-org").addEventListener("click", async () => {
+    const bt = $("#bt-org"); bt.disabled = true;
+    const colabs = await colaboradoresDoPainel();
+    bt.disabled = false;
+    if (colabs) return mostrarOrganograma(colabs, "Organograma do Painel SLA");
+    if (window.confirm("Não consegui ler o Organograma do Painel SLA. Quer escolher a planilha do Organograma?")) $("#arq-org").click();
+  });
+  $("#arq-org").addEventListener("change", async e => {
+    const arq = e.target.files[0]; e.target.value = "";
+    if (!arq) return;
+    const wb = XLSX.read(await arq.arrayBuffer(), { type: "array" });
+    const colabs = colaboradoresDaPlanilha(wb);
+    if (!colabs.length) return window.alert("Não achei as colunas Nome e Supervisor nessa planilha.");
+    mostrarOrganograma(colabs, arq.name);
+  });
 
   // ------------------------------------------------------------------ exportar Excel
   $("#bt-exportar").addEventListener("click", async () => {
