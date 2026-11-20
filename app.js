@@ -659,18 +659,15 @@
     op("#cb-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).concat(doMes.map(x => x.operacao)).filter(Boolean))).sort(), "Todos os contratos");
     fcb.contrato = $("#cb-contrato").value;
     op("#cb-comb", Array.from(new Set(doMes.map(x => x.combustivel).filter(Boolean))).sort(), "Todos os combustíveis");
-    $("#cb-cc").innerHTML = opcoesCC(Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort());
-    $("#cb-cc").value = fcb.cc;
-    const tcc = ($("#cb-cc-txt").value || "").trim();
-    fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = tcc ? "texto:" + tcc : $("#cb-cc").value;
+    atualizarListaCC();
+    fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = ccDoCampo($("#cb-cc-txt").value);
   }
   $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); });
   $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; desenharComb(); });
   $("#cb-contrato").addEventListener("change", e => { fcb.contrato = e.target.value; desenharComb(); });
   $("#cb-comb").addEventListener("change", e => { fcb.comb = e.target.value; desenharComb(); });
-  $("#cb-cc").addEventListener("change", e => { fcb.cc = e.target.value; desenharComb(); });
-  $("#cb-cc-txt").addEventListener("input", e => { const t = e.target.value.trim(); $("#cb-cc").disabled = !!t; fcb.cc = t ? "texto:" + t : $("#cb-cc").value; desenharComb(); });
-  $("#tb-cc").addEventListener("click", e => { const tr = e.target.closest("tr[data-cc]"); if (!tr) return; $("#cb-cc-txt").value = ""; $("#cb-cc").disabled = false; fcb.cc = fcb.cc === tr.dataset.cc ? "" : tr.dataset.cc; $("#cb-cc").value = fcb.cc; desenharComb(); });
+  $("#cb-cc-txt").addEventListener("input", e => { fcb.cc = ccDoCampo(e.target.value); desenharComb(); });
+  $("#tb-cc").addEventListener("click", e => { const tr = e.target.closest("tr[data-cc]"); if (!tr) return; fcb.cc = fcb.cc === tr.dataset.cc ? "" : tr.dataset.cc; $("#cb-cc-txt").value = fcb.cc; desenharComb(); });
   $("#cb-busca").addEventListener("input", e => { fcb.busca = sem(e.target.value); desenharComb(); });
   $("#cb-alerta").addEventListener("change", e => { fcb.alerta = e.target.checked; desenharComb(); });
 
@@ -775,6 +772,18 @@
     return valor === filtro;
   };
   const nomeCC = f => f.startsWith("grupo:") ? f.slice(6).toUpperCase() + " (todos)" : f.startsWith("texto:") ? "“" + f.slice(6) + "”" : f;
+  // um campo só: nome exato da lista → aquele centro; qualquer outro texto → soma os que têm as palavras
+  let CCS_TODOS = [];
+  function ccDoCampo(v) {
+    const t = String(v || "").trim();
+    if (!t) return "";
+    const exato = CCS_TODOS.find(c => sem(c) === sem(t));
+    return exato || "texto:" + t;
+  }
+  function atualizarListaCC() {
+    CCS_TODOS = Array.from(new Set(COMB.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort();
+    $("#dl-cc").innerHTML = CCS_TODOS.map(c => `<option value="${esc(c)}">`).join("");
+  }
   function opcoesCC(ccs) {
     const cont = {};
     ccs.forEach(c => { const w = primeiraPalavra(c); if (w.length >= 3 && !/^\d+$/.test(w)) cont[w] = (cont[w] || 0) + 1; });
@@ -899,18 +908,16 @@
   function desenharInicioComb() {
     const ext = EXTRATO[0];
     $("#ini-comb").hidden = !COMB.length && !CARTOES.length && !ext;
+    $("#ini-comb-filtros").hidden = $("#ini-comb").hidden;
     if ($("#ini-comb").hidden) { $("#ini-graf-caixa").hidden = true; return; }
     // só o mês atual
     const hoje = new Date();
     const mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
     const doMes = COMB.filter(x => x.mes === mes);
-    const sel = $("#ic-cc"), v0 = sel.value;
+    atualizarListaCC();
     const ccs = Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort();
-    sel.innerHTML = opcoesCC(ccs);
-    sel.value = v0; if (sel.value !== v0) sel.value = "";
     const txtCc = ($("#ic-cc-txt").value || "").trim();
-    sel.disabled = !!txtCc;
-    const cc = txtCc ? "texto:" + txtCc : sel.value;
+    const cc = ccDoCampo(txtCc);
     const g = opSel("#ic-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
     const ct = opSel("#ic-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).filter(Boolean))).sort(), "Todos os contratos");
     const filtroIni = x => bateCC(x.centro_custo, cc) && bateDono(x.placa, x, g, ct);
@@ -950,7 +957,7 @@
     $("#ic-periodo").textContent = periodo;
     $("#ic-gasto").textContent = "R$ " + fmtN(gasto, 2);
     $("#ic-det").textContent = det;
-    if (txtCc) $("#ic-det").textContent += ` · ${new Set(CARTOES.concat(doMes).map(x => x.centro_custo).filter(c => c && bateCC(c, cc))).size} centros com “${txtCc}”`;
+    if (cc.startsWith("texto:")) $("#ic-det").textContent += ` · ${new Set(CARTOES.concat(doMes).map(x => x.centro_custo).filter(c => c && bateCC(c, cc))).size} centros com “${txtCc}”`;
     desenharGrafComb(filtroIni, [cc ? nomeCC(cc) : "", g, ct].filter(Boolean).join(" · "));
   }
   // gráfico: barras por combustível em cada mês + linha do total (como no portal da Ticket Log)
@@ -985,16 +992,14 @@
     GRAF = new Chart($("#ini-graf"), cfg);
   }
   $("#ini-graf-caixa").addEventListener("click", e => e.stopPropagation());
-  $("#ic-cc").addEventListener("click", e => e.stopPropagation());
-  $("#ic-cc").addEventListener("change", () => desenharInicioComb());
+
   ["#ic-gestor", "#ic-contrato"].forEach(id => $(id).addEventListener("change", () => desenharInicioComb()));
   $("#ic-cc-txt").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc-txt").addEventListener("input", () => desenharInicioComb());
   $$("#ini-comb [data-ir]").forEach(el => el.addEventListener("click", () => {
-    const hoje = new Date(); fcb.mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0"); fcb.cc = $("#ic-cc").value;
-    const t = ($("#ic-cc-txt").value || "").trim();
-    $("#cb-gestor").value = $("#ic-gestor").value; $("#cb-contrato").value = $("#ic-contrato").value;
-    montarFiltrosComb(); $("#cb-cc-txt").value = t; $("#cb-cc").value = t ? "" : fcb.cc; fcb.cc = t ? "texto:" + t : $("#cb-cc").value; $("#cb-cc").disabled = !!t; desenharComb(); irPara("combustivel");
+    const hoje = new Date(); fcb.mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
+    $("#cb-gestor").value = $("#ic-gestor").value; $("#cb-contrato").value = $("#ic-contrato").value; $("#cb-cc-txt").value = $("#ic-cc-txt").value;
+    montarFiltrosComb(); desenharComb(); irPara("combustivel");
   }));
 
   // ------------------------------------------------------------------ exportar Excel
