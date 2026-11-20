@@ -136,14 +136,16 @@
   function aplicar(d) {
     const primeiro = !EU;
     EU = d.usuario;
-    VEICULOS = (d.veiculos || []).filter(v => v.placa).sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
-    HIST = (d.historico || []).filter(h => h.placa).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
-    OCORRENCIAS = (d.ocorrencias || []).filter(o => o.placa).map(o => Object.assign(o, { id: Number(o.id) })).sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
+    // guarda tudo e depois aplica o filtro de equipe (barra 👥 do topo) — todas as telas usam as listas filtradas
+    TODOS.veic = (d.veiculos || []).filter(v => v.placa).sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
+    TODOS.hist = (d.historico || []).filter(h => h.placa).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
+    TODOS.ocor = (d.ocorrencias || []).filter(o => o.placa).map(o => Object.assign(o, { id: Number(o.id) })).sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
     USUARIOS = d.usuarios || [];
-    HIER = (d.hierarquia || []).filter(h => h.colaborador).sort((a, b) => sem(a.colaborador).localeCompare(sem(b.colaborador)));
-    COMB = (d.combustivel || []).filter(x => x.placa && x.mes);
+    TODOS.hier = (d.hierarquia || []).filter(h => h.colaborador).sort((a, b) => sem(a.colaborador).localeCompare(sem(b.colaborador)));
+    TODOS.comb = (d.combustivel || []).filter(x => x.placa && x.mes);
     EXTRATO = d.extrato || [];
-    CARTOES = (d.cartoes || []).filter(x => x.cartao || x.placa);
+    TODOS.cart = (d.cartoes || []).filter(x => x.cartao || x.placa);
+    filtrarEquipe();
     if (primeiro) {
       $("#user-nome").textContent = EU.nome;
       $("#user-perfil").textContent = { admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[EU.perfil] || EU.perfil;
@@ -151,6 +153,9 @@
       $$("[data-so-gerente]").forEach(el => { el.hidden = EU.perfil !== "admin" && EU.perfil !== "gerente"; });
       $("#tela-login").hidden = true; $("#tela-app").hidden = false;
     }
+    redesenharTudo();
+  }
+  function redesenharTudo() {
     montarFiltros(); desenhar();
     $("#q-placa").innerHTML = VEICULOS.map(v => `<option>${esc(v.placa)}</option>`).join("");
     $("#h-q-placa").innerHTML = $("#q-placa").innerHTML;
@@ -161,6 +166,51 @@
     montarFiltrosComb(); desenharComb(); desenharHier();
     if (EU.perfil === "admin") desenharUsuarios();
   }
+  // ------------------------------------------------------------------ filtro de equipe (vale para o sistema inteiro)
+  const TODOS = { veic: [], hist: [], ocor: [], comb: [], cart: [], hier: [] };
+  const EQ = { ger: "", coord: "", sup: "" };
+  try { Object.assign(EQ, JSON.parse(localStorage.getItem("frotaEquipe_v1") || "{}")); } catch (e) { }
+  const equipeAtiva = () => !!(EQ.ger || EQ.coord || EQ.sup);
+  // gerente / coordenador / supervisor do carro: cadastro do carro; o que faltar vem da hierarquia do condutor
+  function equipeDoCarro(v, mapaHier) {
+    const h = mapaHier.get(sem(v.condutor)) || {};
+    return { ger: h.gerente || v.gestor_operacao || "", coord: v.coordenador || h.coordenador || "", sup: v.supervisor || h.supervisor || "" };
+  }
+  function filtrarEquipe() {
+    const mapaHier = new Map(TODOS.hier.map(h => [sem(h.colaborador), h]));
+    const eqs = TODOS.veic.map(v => [v, equipeDoCarro(v, mapaHier)]);
+    const bate = (e, comCoord, comSup) => (!EQ.ger || sem(e.ger) === sem(EQ.ger)) && (!comCoord || !EQ.coord || sem(e.coord) === sem(EQ.coord)) && (!comSup || !EQ.sup || sem(e.sup) === sem(EQ.sup));
+    const hierEq = h => ({ ger: h.gerente || "", coord: h.coordenador || "", sup: h.supervisor || "" });
+    // opções em cascata: coordenadores do gerente escolhido, supervisores do coordenador escolhido
+    const todasEq = eqs.map(x => x[1]).concat(TODOS.hier.map(hierEq));
+    const lista = (k, f) => Array.from(new Set(todasEq.filter(f).map(e => e[k]).filter(Boolean).map(x => x.replace(/\s+/g, " ").trim()))).sort((a, b) => sem(a).localeCompare(sem(b)));
+    const pre = (id, l, todos, k) => { const el = $(id); el.innerHTML = `<option value="">${todos}</option>` + l.map(x => `<option>${esc(x)}</option>`).join(""); el.value = l.find(x => sem(x) === sem(EQ[k])) || ""; EQ[k] = el.value; };
+    pre("#eq-ger", lista("ger", () => true), "Todos os gerentes", "ger");
+    pre("#eq-coord", lista("coord", e => bate(e, false, false)), "Todos os coordenadores", "coord");
+    pre("#eq-sup", lista("sup", e => bate(e, true, false)), "Todos os supervisores", "sup");
+    try { localStorage.setItem("frotaEquipe_v1", JSON.stringify(EQ)); } catch (e) { }
+    if (!equipeAtiva()) {
+      VEICULOS = TODOS.veic; HIST = TODOS.hist; OCORRENCIAS = TODOS.ocor; COMB = TODOS.comb; CARTOES = TODOS.cart; HIER = TODOS.hier;
+    } else {
+      VEICULOS = eqs.filter(x => bate(x[1], true, true)).map(x => x[0]);
+      const placas = new Set(VEICULOS.map(v => v.placa));
+      HIST = TODOS.hist.filter(h => placas.has(h.placa));
+      OCORRENCIAS = TODOS.ocor.filter(o => placas.has(o.placa));
+      COMB = TODOS.comb.filter(x => placas.has(x.placa));
+      CARTOES = TODOS.cart.filter(x => placas.has(String(x.placa || "").toUpperCase()));
+      HIER = TODOS.hier.filter(h => bate(hierEq(h), true, true));
+    }
+    $("#eq-limpar").hidden = !equipeAtiva();
+    $("#barra-equipe").classList.toggle("on", equipeAtiva());
+    $("#eq-info").textContent = equipeAtiva() ? `${VEICULOS.length} carros · ${HIER.length} pessoas na hierarquia` : "";
+  }
+  [["#eq-ger", "ger"], ["#eq-coord", "coord"], ["#eq-sup", "sup"]].forEach(([id, k]) => $(id).addEventListener("change", e => {
+    EQ[k] = e.target.value;
+    if (k === "ger") { EQ.coord = ""; EQ.sup = ""; } else if (k === "coord") EQ.sup = "";
+    filtrarEquipe(); redesenharTudo();
+  }));
+  $("#eq-limpar").addEventListener("click", () => { EQ.ger = EQ.coord = EQ.sup = ""; filtrarEquipe(); redesenharTudo(); });
+
   if (SESSAO && SESSAO.token) entrar(); else mostrarLogin("");
 
   // ------------------------------------------------------------------ abas
@@ -946,7 +996,7 @@
     const ca = CARTOES.filter(filtroIni);
     const per = (doMes.find(x => x.periodo) || {}).periodo;
     let saldo, sub, gasto, periodo, det;
-    if (ext && !cc && !g && !ct) {
+    if (ext && !cc && !g && !ct && !equipeAtiva()) {
       // contrato inteiro: números do Extrato Simplificado (iguais ao portal)
       saldo = n0(ext.saldo_contratual);
       sub = `${fmtN(100 - n0(ext.pct_consumido), 2)}% disponível${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""}`;
