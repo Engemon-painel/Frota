@@ -535,7 +535,7 @@
   // relatório da Ticket Log: uma linha por placa e combustível no mês. Cada placa fica ligada ao condutor
   // do mês (linha do tempo); carros coringa ficam numa tabela à parte.
   let COMB = [], EXTRATO = [], CARTOES = [];
-  const fcb = { mes: "", gestor: "", comb: "", cc: "", busca: "", alerta: false };
+  const fcb = { mes: "", gestor: "", contrato: "", comb: "", cc: "", busca: "", alerta: false };
   const numBR = v => {
     if (typeof v === "number") return v;
     let t = String(v == null ? "" : v).replace(/R\$|\s/g, "");
@@ -655,7 +655,9 @@
     $("#cb-mes").value = fcb.mes;
     const op = (id, lista, todos) => { const v = $(id).value; $(id).innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); $(id).value = lista.indexOf(v) >= 0 ? v : ""; };
     const doMes = COMB.filter(x => x.mes === fcb.mes);
-    op("#cb-gestor", Array.from(new Set(doMes.map(x => x.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
+    op("#cb-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).concat(doMes.map(x => x.gestor_operacao)).filter(Boolean))).sort(), "Todos os gestores");
+    op("#cb-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).concat(doMes.map(x => x.operacao)).filter(Boolean))).sort(), "Todos os contratos");
+    fcb.contrato = $("#cb-contrato").value;
     op("#cb-comb", Array.from(new Set(doMes.map(x => x.combustivel).filter(Boolean))).sort(), "Todos os combustíveis");
     $("#cb-cc").innerHTML = opcoesCC(Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort());
     $("#cb-cc").value = fcb.cc;
@@ -664,6 +666,7 @@
   }
   $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); });
   $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; desenharComb(); });
+  $("#cb-contrato").addEventListener("change", e => { fcb.contrato = e.target.value; desenharComb(); });
   $("#cb-comb").addEventListener("change", e => { fcb.comb = e.target.value; desenharComb(); });
   $("#cb-cc").addEventListener("change", e => { fcb.cc = e.target.value; desenharComb(); });
   $("#cb-cc-txt").addEventListener("input", e => { const t = e.target.value.trim(); $("#cb-cc").disabled = !!t; fcb.cc = t ? "texto:" + t : $("#cb-cc").value; desenharComb(); });
@@ -675,9 +678,9 @@
   function consumoPorPlaca() {
     const veic = new Map(VEICULOS.map(v => [v.placa, v]));
     const mp = new Map();
-    COMB.filter(x => x.mes === fcb.mes && (!fcb.gestor || x.gestor_operacao === fcb.gestor) && (!fcb.comb || x.combustivel === fcb.comb) && bateCC(x.centro_custo, fcb.cc)).forEach(x => {
+    COMB.filter(x => x.mes === fcb.mes && bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb) && bateCC(x.centro_custo, fcb.cc)).forEach(x => {
       let p = mp.get(x.placa);
-      if (!p) { const v = veic.get(x.placa); p = { placa: x.placa, condutor: x.condutores || "", modelo: x.modelo || (v && v.modelo) || "", gestor: x.gestor_operacao || "", operacao: x.operacao || "",
+      if (!p) { const v = veic.get(x.placa); const dn = dono(x.placa, x); p = { placa: x.placa, condutor: x.condutores || dn.condutor || "", modelo: x.modelo || (v && v.modelo) || "", gestor: dn.gestor, operacao: dn.contrato,
         cc: x.centro_custo || "", combs: [], km: 0, litros: 0, total: 0, limite: x.limite, saldo: x.saldo, coringa: ehCoringa(x, v), naFrota: x.na_frota !== "NAO" }; mp.set(x.placa, p); }
       if (x.combustivel && p.combs.indexOf(x.combustivel) < 0) p.combs.push(x.combustivel);
       p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total);
@@ -721,7 +724,7 @@
     $("#cb-info").textContent = `${nomeMes(fcb.mes)}${per ? " (" + per + ")" : ""} · ${lista.length} carros`;
     // gasto por centro de custo (respeita mês, gestor e combustível)
     const g = {};
-    COMB.filter(x => x.mes === fcb.mes && (!fcb.gestor || x.gestor_operacao === fcb.gestor) && (!fcb.comb || x.combustivel === fcb.comb)).forEach(x => {
+    COMB.filter(x => x.mes === fcb.mes && bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb)).forEach(x => {
       const c = x.centro_custo || "Sem centro de custo";
       const o = g[c] = g[c] || { placas: new Set(), l: 0, km: 0, t: 0 };
       o.placas.add(x.placa); o.l += n0(x.litros); o.km += n0(x.km_rodados); o.t += n0(x.total);
@@ -729,7 +732,7 @@
     const ccs = Object.keys(g).sort((a, b) => g[b].t - g[a].t), totG = ccs.reduce((a, c) => a + g[c].t, 0);
     $("#tb-cc").innerHTML = ccs.map(c => `<tr class="clica${fcb.cc && bateCC(c, fcb.cc) ? " cc-on" : ""}" data-cc="${esc(c === "Sem centro de custo" ? "" : c)}"><td><b>${esc(c)}</b></td><td class="num">${g[c].placas.size}</td><td class="num">${fmtN(g[c].l, 2)}</td><td class="num">${fmtN(g[c].km)}</td><td class="num">${fmtN(g[c].l ? g[c].km / g[c].l : null, 2)}</td><td class="num"><b>${fmtN(g[c].t, 2)}</b></td><td class="num">${totG ? fmtN(g[c].t / totG * 100, 1) + "%" : "-"}</td></tr>`).join("") || '<tr><td colspan="7" class="info">Sem dados.</td></tr>';
   }
-  ["#tb-comb", "#tb-comb-cor"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
+  ["#tb-comb", "#tb-comb-cor", "#tb-cartoes", "#tb-cartoes-cor"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
 
   $("#bt-comb-exp").addEventListener("click", () => {
     const lista = consumoPorPlaca();
@@ -748,6 +751,16 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), "Detalhe por combustível");
     XLSX.writeFile(wb, `Combustivel_${fcb.mes}.xlsx`);
   });
+
+  // liga a placa à base de veículos: condutor, gestor operação e contrato (operação) vêm do cadastro do carro
+  let MAPA_VEIC = new Map(), MAPA_VEIC_N = -1;
+  function dono(placa, x) {
+    if (MAPA_VEIC_N !== VEICULOS.length || !MAPA_VEIC.size) { MAPA_VEIC = new Map(VEICULOS.map(v => [v.placa, v])); MAPA_VEIC_N = VEICULOS.length; }
+    const v = MAPA_VEIC.get(String(placa || "").toUpperCase()) || null;
+    return { v, condutor: v ? (v.condutor || "") : "", gestor: (v && v.gestor_operacao) || (x && x.gestor_operacao) || "", contrato: (v && v.operacao) || (x && x.operacao) || "" };
+  }
+  const bateDono = (placa, x, g, ct) => { if (!g && !ct) return true; const d = dono(placa, x); return (!g || d.gestor === g) && (!ct || d.contrato === ct); };
+  const opSel = (id, lista, todos) => { const el = $(id), v = el.value; el.innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); el.value = lista.indexOf(v) >= 0 ? v : ""; return el.value; };
 
   // centro de custo: valor exato, ou "grupo:CLARO" = todos os que começam com CLARO
   const primeiraPalavra = c => (sem(c).match(/^[a-z0-9]+/) || [""])[0];
@@ -863,13 +876,14 @@
     if (!CARTOES.length) { caixa.hidden = true; return; }
     caixa.hidden = false;
     const veic = new Map(VEICULOS.map(v => [v.placa, v]));
-    const ls = CARTOES.filter(c => bateCC(c.centro_custo, fcb.cc) && (!fcb.gestor || (veic.get(c.placa) || {}).gestor_operacao === fcb.gestor)
-      && (!fcb.busca || sem([c.cartao, c.placa, c.responsavel, c.centro_custo, c.modelo].join(" ")).includes(fcb.busca)))
+    const ls = CARTOES.filter(c => bateCC(c.centro_custo, fcb.cc) && bateDono(c.placa, null, fcb.gestor, fcb.contrato)
+      && (!fcb.busca || sem([c.cartao, c.placa, c.responsavel, c.centro_custo, c.modelo, dono(c.placa).condutor].join(" ")).includes(fcb.busca)))
+      .map(c => { const d = dono(c.placa); return Object.assign({}, c, { condutor: d.condutor, gestor: d.gestor, contrato: d.contrato, naBase: !!d.v }); })
       .map(c => Object.assign({}, c, { pct: n0(c.limite_atual) > 0 ? n0(c.utilizado) / n0(c.limite_atual) * 100 : 0 })).sort((a, b) => b.pct - a.pct);
     const linhasCartoes = (lista, vazio) => {
       if (!lista.length) return `<tr><td colspan="9" class="info">${vazio}</td></tr>`;
       const s = lista.reduce((a, c) => ({ l: a.l + n0(c.limite_atual), u: a.u + n0(c.utilizado), s: a.s + n0(c.saldo) }), { l: 0, u: 0, s: 0 });
-      return lista.map(c => `<tr class="${c.pct >= 90 ? "tem-alerta" : ""}"><td class="cond">${esc(c.responsavel)}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.cartao)}</td><td>${esc(c.centro_custo)}</td><td>${esc(c.modelo)}</td>
+      return lista.map(c => `<tr class="clica${c.pct >= 90 ? " tem-alerta" : ""}" data-placa="${esc(c.placa)}" title="Cartão ${esc(c.cartao)} · responsável na Ticket Log: ${esc(c.responsavel)}"><td class="cond">${esc(c.condutor || c.responsavel)}${c.naBase ? (c.condutor && sem(c.condutor) !== sem(c.responsavel) && c.responsavel ? `<small class="resp">Ticket Log: ${esc(c.responsavel)}</small>` : "") : '<small class="resp">placa fora da base de veículos</small>'}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.gestor)}</td><td>${esc(c.contrato)}</td><td>${esc(c.centro_custo)}</td>
       <td class="num">${fmtN(n0(c.limite_atual), 2)}</td><td class="num">${fmtN(n0(c.utilizado), 2)}</td><td class="num"><b>${fmtN(n0(c.saldo), 2)}</b></td>
       <td class="num"><span class="uso"><i style="width:${Math.min(100, c.pct)}%;background:${c.pct >= 90 ? "#b91c1c" : c.pct >= 70 ? "#ea580c" : "#0e7c86"}"></i></span> ${fmtN(c.pct, 0)}%</td></tr>`).join("")
       + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "cartão" : "cartões"})</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.u, 2)}</b></td><td class="num"><b>${fmtN(s.s, 2)}</b></td><td class="num"><b>${s.l ? fmtN(s.u / s.l * 100, 0) + "%" : "-"}</b></td></tr>`;
@@ -897,12 +911,15 @@
     const txtCc = ($("#ic-cc-txt").value || "").trim();
     sel.disabled = !!txtCc;
     const cc = txtCc ? "texto:" + txtCc : sel.value;
-    const rs = doMes.filter(x => bateCC(x.centro_custo, cc));
+    const g = opSel("#ic-gestor", Array.from(new Set(VEICULOS.map(v => v.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
+    const ct = opSel("#ic-contrato", Array.from(new Set(VEICULOS.map(v => v.operacao).filter(Boolean))).sort(), "Todos os contratos");
+    const filtroIni = x => bateCC(x.centro_custo, cc) && bateDono(x.placa, x, g, ct);
+    const rs = doMes.filter(filtroIni);
     const litros = rs.reduce((a, x) => a + n0(x.litros), 0);
-    const ca = CARTOES.filter(x => bateCC(x.centro_custo, cc));
+    const ca = CARTOES.filter(filtroIni);
     const per = (doMes.find(x => x.periodo) || {}).periodo;
     let saldo, sub, gasto, periodo, det;
-    if (ext && !cc) {
+    if (ext && !cc && !g && !ct) {
       // contrato inteiro: números do Extrato Simplificado (iguais ao portal)
       saldo = n0(ext.saldo_contratual);
       sub = `${fmtN(100 - n0(ext.pct_consumido), 2)}% disponível${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""}`;
@@ -934,19 +951,19 @@
     $("#ic-gasto").textContent = "R$ " + fmtN(gasto, 2);
     $("#ic-det").textContent = det;
     if (txtCc) $("#ic-det").textContent += ` · ${new Set(CARTOES.concat(doMes).map(x => x.centro_custo).filter(c => c && bateCC(c, cc))).size} centros com “${txtCc}”`;
-    desenharGrafComb(cc);
+    desenharGrafComb(filtroIni, [cc ? nomeCC(cc) : "", g, ct].filter(Boolean).join(" · "));
   }
   // gráfico: barras por combustível em cada mês + linha do total (como no portal da Ticket Log)
   const GRUPOS_COMB = [["Diesel", "#3a3a3a", t => t.includes("diesel")], ["Etanol", "#0f9d7a", t => t.includes("etanol") || t.includes("alcool")],
     ["Gás natural", "#11b5e4", t => t.includes("gnv") || t.includes("gas natural")], ["Gasolina", "#f0291f", t => t.includes("gasolina")], ["Não especificado", "#111111", () => true]];
   let GRAF = null;
-  function desenharGrafComb(cc) {
+  function desenharGrafComb(filtro, rotulo) {
     const caixa = $("#ini-graf-caixa");
     if (!window.Chart || !COMB.length) { caixa.hidden = true; return; }
     caixa.hidden = false;
     const meses = Array.from(new Set(COMB.map(x => x.mes))).sort().slice(-12);
     const soma = {};
-    COMB.filter(x => bateCC(x.centro_custo, cc)).forEach(x => {
+    COMB.filter(filtro).forEach(x => {
       const t = sem(x.combustivel); const g = GRUPOS_COMB.find(gr => gr[2](t))[0];
       soma[x.mes + "|" + g] = (soma[x.mes + "|" + g] || 0) + n0(x.total);
     });
@@ -956,7 +973,7 @@
       borderRadius: 12, borderSkipped: false, barPercentage: 0.55, categoryPercentage: 0.7, maxBarThickness: 22, order: 2 }));
     const total = { type: "line", label: "Total", data: meses.map((m, i) => barras.reduce((a, b) => a + b.data[i], 0)), borderColor: "#111", backgroundColor: "#fff",
       borderWidth: 2.5, pointRadius: 5, pointHoverRadius: 7, pointBorderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#111", tension: 0, order: 1 };
-    $("#ini-graf-cc").textContent = cc ? "· " + nomeCC(cc) : "";
+    $("#ini-graf-cc").textContent = rotulo ? "· " + rotulo : "";
     const real = v => "R$ " + Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
     const cfg = { data: { labels: rot, datasets: [total].concat(barras) },
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
@@ -970,11 +987,13 @@
   $("#ini-graf-caixa").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc").addEventListener("change", () => desenharInicioComb());
+  ["#ic-gestor", "#ic-contrato"].forEach(id => $(id).addEventListener("change", () => desenharInicioComb()));
   $("#ic-cc-txt").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc-txt").addEventListener("input", () => desenharInicioComb());
   $$("#ini-comb [data-ir]").forEach(el => el.addEventListener("click", () => {
     const hoje = new Date(); fcb.mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0"); fcb.cc = $("#ic-cc").value;
     const t = ($("#ic-cc-txt").value || "").trim();
+    $("#cb-gestor").value = $("#ic-gestor").value; $("#cb-contrato").value = $("#ic-contrato").value;
     montarFiltrosComb(); $("#cb-cc-txt").value = t; $("#cb-cc").value = t ? "" : fcb.cc; fcb.cc = t ? "texto:" + t : $("#cb-cc").value; $("#cb-cc").disabled = !!t; desenharComb(); irPara("combustivel");
   }));
 
