@@ -203,3 +203,12 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .tab-uni tr.linha-total td{background:#f1f5f9}
 .tab-uni-caixa{max-height:75vh}
 .resp.alerta-txt{color:#b91c1c;font-weight:700}
+
+/* alertas de abastecimento */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+.chip{display:inline-block;padding:5px 12px;border-radius:999px;font-weight:700;font-size:13px;background:#f1f5f9}
+.chip.vermelho{background:#fee2e2;color:#991b1b}.chip.laranja{background:#ffedd5;color:#9a3412}
+.tab-trans{font-size:12.5px}.tab-trans td{padding:5px 7px;vertical-align:top}
+.tab-trans td.det{white-space:normal;min-width:320px}.tab-trans td.det span{display:block}
+.tab-trans td.det span.acima{color:#c2410c;font-weight:700}
+.tab-trans td.alerta-txt{white-space:normal;color:#b91c1c;font-weight:700;min-width:170px}
