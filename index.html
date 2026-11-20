@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=11">
+<link rel="stylesheet" href="estilo.css?v=12">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -75,7 +75,8 @@
           <div class="cartao-limite" data-ir="combustivel"><div class="cl-topo"><b>Limite disponível</b><span aria-hidden="true">👁</span></div>
             <div class="cl-valor" id="ic-saldo"></div><div class="cl-sub" id="ic-limite"></div></div>
           <div class="cartao-gasto" data-ir="combustivel"><div class="cg-topo"><div><b>Gasto no mês</b><small id="ic-periodo"></small></div>
-            <select id="ic-cc" title="Centro de custo"><option value="">Todos os centros de custo</option></select></div>
+            <div class="cc-escolha"><select id="ic-cc" title="Centro de custo"><option value="">Todos os centros de custo</option></select>
+            <input id="ic-cc-txt" type="search" placeholder="ou digite: claro sp" title="Soma os centros de custo que têm essas palavras"></div></div>
             <div class="cg-valor" id="ic-gasto"></div><div class="cl-sub2" id="ic-det"></div></div>
         </div>
         <div class="painel graf-caixa" id="ini-graf-caixa" hidden>
@@ -173,6 +174,7 @@
           <select id="cb-gestor"><option value="">Todos os gestores</option></select>
           <select id="cb-comb"><option value="">Todos os combustíveis</option></select>
           <select id="cb-cc"><option value="">Todos os centros de custo</option></select>
+          <input id="cb-cc-txt" type="search" placeholder="Centro de custo contém… (ex.: claro sp)" style="min-width:230px">
           <input id="cb-busca" type="search" placeholder="Buscar placa, condutor, modelo…">
           <label class="info"><input id="cb-alerta" type="checkbox"> só com alerta</label>
           <span id="cb-info" class="info"></span>
@@ -254,6 +256,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
