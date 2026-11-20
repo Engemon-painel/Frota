@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=8">
+<link rel="stylesheet" href="estilo.css?v=10">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -77,6 +77,10 @@
           <div class="cartao-gasto" data-ir="combustivel"><div class="cg-topo"><div><b>Gasto no mês</b><small id="ic-periodo"></small></div>
             <select id="ic-cc" title="Centro de custo"><option value="">Todos os centros de custo</option></select></div>
             <div class="cg-valor" id="ic-gasto"></div><div class="cl-sub2" id="ic-det"></div></div>
+        </div>
+        <div class="painel graf-caixa" id="ini-graf-caixa" hidden>
+          <h2 class="graf-titulo">Comparativo de gastos <span class="info" id="ini-graf-cc"></span></h2>
+          <div class="graf-area"><canvas id="ini-graf" aria-label="Gasto por mês e combustível"></canvas></div>
         </div>
         <div class="kpis" id="ini-kpis"></div>
         <div class="ini-grade">
@@ -162,7 +166,7 @@
             <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir consumo (Excel)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv" hidden>
             <button class="bt bt-sec" id="bt-comb-exp">⬇ Baixar Excel</button>
           </div></div>
-        <p class="nota">Suba o relatório de consumo da Ticket Log (uma linha por placa e combustível) e escolha o mês. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
+        <p class="nota">Suba o relatório de consumo da Ticket Log (uma linha por placa e combustível) e escolha o mês — ou o <b>Extrato Simplificado</b> (limite do contrato e saldo dos cartões); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
         <p id="cb-msg" class="msg"></p>
         <div class="filtros">
           <select id="cb-mes"></select>
@@ -176,6 +180,10 @@
         <div class="kpis" id="cb-kpis"></div>
         <h2 class="sub-titulo">Gasto por centro de custo <span class="info">clique para filtrar</span></h2>
         <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Centro de custo</th><th class="num">Carros</th><th class="num">Litros</th><th class="num">Km rodados</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">% do gasto</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
+        <div id="cb-cartoes-caixa" hidden>
+          <h2 class="sub-titulo">Saldo dos cartões <span class="info" id="cb-cartoes-info"></span></h2>
+          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Cartão</th><th>Placa</th><th>Responsável</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
+        </div>
         <h2 class="sub-titulo">Por condutor</h2>
         <div class="tabela-caixa"><table class="tabela"><thead id="cb-cab"></thead><tbody id="tb-comb"></tbody></table></div>
         <h2 class="sub-titulo">Carros coringa <span class="info" id="cb-cor-info"></span></h2>
@@ -242,7 +250,8 @@
   <div id="modal" class="modal" hidden><div class="modal-caixa" role="dialog" aria-modal="true"><button class="modal-x" id="modal-x" aria-label="Fechar">×</button><div id="modal-corpo"></div></div></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>
