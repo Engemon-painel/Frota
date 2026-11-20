@@ -163,11 +163,11 @@
         <div class="linha-titulo"><h1>Consumo de combustível</h1>
           <div class="acoes">
             <label class="info" data-so-admin hidden>Mês da planilha <input id="cb-mes-up" type="month"></label>
-            <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir consumo (Excel)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv" hidden>
+            <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir arquivos (consumo e extrato)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
             <button class="bt bt-sec" id="bt-comb-exp">⬇ Baixar Excel</button>
           </div></div>
         <p class="nota">Suba o relatório de consumo da Ticket Log (uma linha por placa e combustível) e escolha o mês — ou o <b>Extrato Simplificado</b> (limite do contrato e saldo dos cartões); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
-        <p id="cb-msg" class="msg"></p>
+        <p id="cb-msg" class="msg"></p><div id="cb-msgs"></div>
         <div class="filtros">
           <select id="cb-mes"></select>
           <select id="cb-gestor"><option value="">Todos os gestores</option></select>
@@ -254,6 +254,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
