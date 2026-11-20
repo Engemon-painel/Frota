@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=10">
+<link rel="stylesheet" href="estilo.css?v=11">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -181,8 +181,10 @@
         <h2 class="sub-titulo">Gasto por centro de custo <span class="info">clique para filtrar</span></h2>
         <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Centro de custo</th><th class="num">Carros</th><th class="num">Litros</th><th class="num">Km rodados</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">% do gasto</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
         <div id="cb-cartoes-caixa" hidden>
-          <h2 class="sub-titulo">Saldo dos cartões <span class="info" id="cb-cartoes-info"></span></h2>
-          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Cartão</th><th>Placa</th><th>Responsável</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
+          <h2 class="sub-titulo">Saldo dos cartões por técnico <span class="info" id="cb-cartoes-info"></span></h2>
+          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Técnico (responsável)</th><th>Placa</th><th>Cartão</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
+          <h2 class="sub-titulo">Cartões coringa <span class="info" id="cb-cartoes-cor-info"></span></h2>
+          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Responsável</th><th>Placa</th><th>Cartão</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes-cor"></tbody></table></div>
         </div>
         <h2 class="sub-titulo">Por condutor</h2>
         <div class="tabela-caixa"><table class="tabela"><thead id="cb-cab"></thead><tbody id="tb-comb"></tbody></table></div>
@@ -252,6 +254,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>
