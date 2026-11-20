@@ -152,3 +152,4 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .cc-caixa{max-height:320px}
 .tabela tr.cc-on td{background:#e0f2f1}
 @media (max-width:700px){.ini-comb{grid-template-columns:1fr}}
+#cb-kpis .kpi b{font-size:clamp(20px,1.9vw,28px);white-space:nowrap}
