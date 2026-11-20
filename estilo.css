@@ -189,3 +189,17 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .barra-equipe{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--painel);border:1px solid var(--linha);border-radius:12px;padding:8px 12px;margin:0 0 14px;position:sticky;top:0;z-index:5}
 .barra-equipe select{font:inherit;padding:7px 10px;border:1px solid var(--linha);border-radius:8px;background:#fff;max-width:260px}
 .barra-equipe.on{border-color:var(--pri);box-shadow:0 0 0 2px rgba(14,124,134,.18);background:#f0fdfa}
+
+/* tabela única (consumo + cartão), compacta */
+.tab-uni{table-layout:auto;min-width:0;font-size:12.5px}
+.tab-uni th{padding:6px 5px;font-size:10.5px;white-space:nowrap}
+.tab-uni td{padding:4px 5px;white-space:nowrap;line-height:1.25}
+.tab-uni td.cond{white-space:normal;min-width:170px;max-width:220px}
+.tab-uni td:nth-child(3){white-space:normal;max-width:110px}.tab-uni td:nth-child(4){white-space:normal;max-width:140px}.tab-uni td:nth-child(5){white-space:normal;max-width:150px}
+.tab-uni td.num small.resp{text-align:right}
+.tab-uni td small.resp{font-size:10.5px}
+.tab-uni .uso{width:36px;height:6px}
+.tab-uni tr.secao td{background:#ede9fe;color:#5b21b6;font-weight:800;padding:6px 8px;border-top:2px solid #c4b5fd}
+.tab-uni tr.linha-total td{background:#f1f5f9}
+.tab-uni-caixa{max-height:75vh}
+.resp.alerta-txt{color:#b91c1c;font-weight:700}
