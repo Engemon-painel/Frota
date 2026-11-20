@@ -319,6 +319,14 @@
   $("#tb-veiculos").addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr) abrirVeiculo(tr.dataset.placa); });
 
   // ------------------------------------------------------------------ início (resumo)
+  function alertaTransInicio(mes, placas, g, ct) {
+    if (!TRANS_C[mes]) { garantirTrans(mes, () => desenharInicio()); return ""; }
+    const rows = TRANS_C[mes].filter(t => (!g && !ct && !equipeAtiva()) || placas.has(t.placa));
+    const al = alertasTrans(rows);
+    const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
+    if (!mais2 && !acima) return "";
+    return `<div class="alerta" data-ir="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque em ${nomeMes(mes)}. Clique para ver.</div>`;
+  }
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
     // filtro de gestor e contrato vale para o Início inteiro (carros, ocorrências, multas, trocas e combustível)
@@ -340,13 +348,14 @@
     $("#ini-alertas").innerHTML =
       (semGar ? `<div class="alerta" data-ir="garagem">⚠ <b>${semGar}</b> carros sem o local onde ficam guardados. Clique para preencher.</div>` : "") +
       (semEq && podeSup() ? `<div class="alerta amarelo" data-ir="veiculos">⚠ <b>${semEq}</b> carros sem supervisor ou coordenador.</div>` : "") +
-      (abertas.length ? `<div class="alerta amarelo" data-ir="ocorrencias">⚠ <b>${abertas.length}</b> ocorrências abertas aguardando tratativa.</div>` : "");
+      (abertas.length ? `<div class="alerta amarelo" data-ir="ocorrencias">⚠ <b>${abertas.length}</b> ocorrências abertas aguardando tratativa.</div>` : "") + alertaTransInicio(mesAt, placas, g, ct);
     // ao abrir Veículos ou Ocorrências, leva o mesmo filtro
     const levar = destino => {
       if (destino === "veiculos" || destino === "garagem") {
         filtro.gestor = g; filtro.contrato = ct; $("#f-gestor").value = g; $("#f-contrato").value = ct;
         if (destino === "garagem") { filtro.garagem = "sem"; $("#f-garagem").value = "sem"; }
         irPara("veiculos"); desenhar();
+      } else if (destino === "combustivel") { fcb.mes = mesAt; $("#cb-gestor").value = g; $("#cb-contrato").value = ct; montarFiltrosComb(); desenharComb(); irPara("combustivel"); setTimeout(() => { const el = $("#cb-trans-caixa"); if (el && !el.hidden) el.scrollIntoView({ behavior: "smooth" }); }, 100);
       } else if (destino === "ocorrencias") { fofo.placas = (g || ct) ? placas : null; fofo.rotulo = [g, ct].filter(Boolean).join(" · "); irPara("ocorrencias"); desenharOcorrencias(); }
       else irPara(destino);
     };
@@ -658,6 +667,7 @@
       for (const nome of wb.SheetNames) {
         const t = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
         if (/saldo contratual|extrato simplificado/.test(sem(t.slice(0, 60).map(l => l.join(" ")).join(" ")))) return await subirExtrato(t, el);
+        if (t.slice(0, 40).some(l => l.some(c => sem(c).replace(/\s+/g, " ").trim() === "codigo transacao"))) return await subirTransacoes(t, el);
       }
       let m = null, r0 = -1;
       for (const nome of wb.SheetNames) {
@@ -748,7 +758,7 @@
   $("#cb-alerta").addEventListener("change", e => { fcb.alerta = e.target.checked; desenharComb(); });
   $("#cb-difnome").addEventListener("change", e => { fcb.difnome = e.target.checked; desenharComb(); });
   // responsável do cartão (Ticket Log) diferente do condutor da base de veículos
-  const nomeDiferente = p => !!(p.cartao && p.cartao.responsavel && p.condutor && sem(p.cartao.responsavel) !== sem(p.condutor));
+  const nomeDiferente = p => { const q = (p.motoristas && p.motoristas[0]) || (p.cartao && p.cartao.responsavel); return !!(q && p.condutor && sem(q) !== sem(p.condutor)); };
 
   // junta as linhas de cada placa (gasolina + etanol) e marca alerta de consumo
   function consumoPorPlaca() {
@@ -802,8 +812,10 @@
       p.pct = p.limiteC > 0 ? p.utilC / p.limiteC * 100 : 0;
       if (!p.modelo) p.modelo = c.modelo;
     });
+    const motM = motoristaDoMes(fcb.mes);
+    porPlaca.forEach(p => { const ms = motM.get(p.placa); if (ms && ms.length) p.motoristas = ms; });
     const todas = Array.from(porPlaca.values()).filter(p => !fcb.difnome || nomeDiferente(p));
-    const nomeP = p => (p.cartao && p.cartao.responsavel) || p.condutor || "";
+    const nomeP = p => (p.motoristas && p.motoristas[0]) || (p.cartao && p.cartao.responsavel) || p.condutor || "";
     const cond = todas.filter(p => !p.coringa).sort((a, b) => (nomeP(a) ? 0 : 1) - (nomeP(b) ? 0 : 1) || sem(nomeP(a)).localeCompare(sem(nomeP(b))) || a.placa.localeCompare(b.placa));
     const cor = todas.filter(p => p.coringa).sort((a, b) => a.placa.localeCompare(b.placa));
     return { lista, cond, cor };
@@ -819,8 +831,11 @@
     return l.map(p => {
       const c = p.cartao || {};
       // nome principal = quem abastece (responsável do cartão na Ticket Log); embaixo, o condutor da base se for outro
-      const resp = c.responsavel && p.condutor && dif(p.condutor, c.responsavel) ? `<small class="resp">condutor na base: ${esc(p.condutor)}</small>` : "";
-      const nome = c.responsavel || p.condutor || (p.coringa ? "Cartão coringa" : "Sem condutor na base");
+      // quem abastece: motorista das transações do mês; senão o responsável do cartão; embaixo, o condutor da base se for outro
+      const quem = (p.motoristas && p.motoristas[0]) || c.responsavel || "";
+      const outros = p.motoristas && p.motoristas.length > 1 ? `<small class="resp">também: ${esc(p.motoristas.slice(1, 3).join(", "))}${p.motoristas.length > 3 ? "…" : ""}</small>` : "";
+      const resp = outros + (quem && p.condutor && dif(p.condutor, quem) ? `<small class="resp">condutor na base: ${esc(p.condutor)}</small>` : "");
+      const nome = quem || p.condutor || (p.coringa ? "Cartão coringa" : "Sem condutor na base");
       const ccC = c.centro_custo || "", ccR = p.cc || "";
       const ccTxt = dif(ccR, ccC) ? `${esc(ccR)}<small class="resp">no extrato: ${esc(ccC)}</small>` : esc(ccR || ccC);
       const pct = p.cartao ? p.pct : null;
@@ -838,6 +853,7 @@
   }
   function desenharComb() {
     $("#cb-cab").innerHTML = CAB_UNI();
+    desenharTrans();
     if (!COMB.length && !CARTOES.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="${NCOL}" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Suba o relatório de consumo e o Extrato Simplificado." : ""}</td></tr>`; $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = ""; return; }
     const { lista, cond, cor } = linhasUnificadas();
     const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
@@ -953,6 +969,125 @@
       });
     });
     return out;
+  }
+
+  // ------------------------------------------------------------------ transações (cada abastecimento: data, motorista, litros)
+  const TRANS_C = {};            // mês → lista de transações (carrega quando precisa)
+  const transPedidas = {};
+  function garantirTrans(mes, depois) {
+    if (!mes || TRANS_C[mes]) return;
+    if (transPedidas[mes]) { if (depois) transPedidas[mes].push(depois); return; }
+    transPedidas[mes] = depois ? [depois] : [];
+    api("transacoes", { mes }).then(r => {
+      TRANS_C[mes] = (r.transacoes || []).filter(t => t.placa);
+      const fs = transPedidas[mes] || []; delete transPedidas[mes];
+      fs.forEach(f => { try { f(); } catch (e) { } });
+    }).catch(() => { delete transPedidas[mes]; });
+  }
+  const TANQUE = [["mobi", 47], ["kwid", 38], ["onix", 44], ["prisma", 54], ["hb20", 50], ["argo", 48], ["cronos", 48], ["gol", 55], ["voyage", 55], ["polo", 52],
+    ["virtus", 52], ["saveiro", 55], ["strada", 55], ["montana", 44], ["fiorino", 50], ["kangoo", 60], ["partner", 60], ["doblo", 60], ["ranger", 80], ["hilux", 80],
+    ["s10", 76], ["l200", 75], ["amarok", 80], ["tracker", 44], ["kicks", 41], ["yaris", 45], ["logan", 50], ["sandero", 50], ["duster", 50], ["spin", 53],
+    ["cobalt", 54], ["corolla", 50], ["renegade", 60], ["compass", 60], ["master", 80], ["ducato", 90], ["sprinter", 75], ["daily", 90], [" up", 50]];
+  const tanqueDe = modelo => { const m = " " + sem(modelo); const t = TANQUE.find(x => m.includes(x[0])); return t ? t[1] : 60; };
+  // dias com mais de 2 abastecimentos na mesma placa, ou abastecimento acima do tanque
+  function alertasTrans(rows) {
+    const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
+    const dias = new Map();
+    rows.forEach(t => {
+      const k = t.placa + "|" + String(t.data).slice(0, 10);
+      if (!dias.has(k)) dias.set(k, []);
+      dias.get(k).push(t);
+    });
+    const out = [];
+    dias.forEach((l, k) => {
+      l.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      const modelo = l[0].modelo || (veic.get(l[0].placa) || {}).modelo || "";
+      const cap = tanqueDe(modelo);
+      const acima = l.filter(t => n0(numBR(t.litros)) > cap * 1.05);
+      const tipos = [];
+      if (l.length > 2) tipos.push(`${l.length} abastecimentos no dia`);
+      if (acima.length) tipos.push(`${acima.length === 1 ? "1 abastecimento" : acima.length + " abastecimentos"} acima do tanque (${cap} L)`);
+      if (!tipos.length) return;
+      out.push({ dia: k.split("|")[1], placa: l[0].placa, modelo, cap, itens: l, n: l.length, acima: acima.length, tipos,
+        motoristas: Array.from(new Set(l.map(t => t.motorista || t.responsavel).filter(Boolean))),
+        litros: l.reduce((a, t) => a + n0(numBR(t.litros)), 0), valor: l.reduce((a, t) => a + n0(numBR(t.valor)), 0) });
+    });
+    return out.sort((a, b) => b.dia.localeCompare(a.dia) || a.placa.localeCompare(b.placa));
+  }
+  // mesmas regras de filtro da tela (equipe, gestor, contrato, centro de custo, busca)
+  function transFiltradas(mes, opts) {
+    const rows = TRANS_C[mes] || [];
+    const veicVis = new Set(VEICULOS.map(v => v.placa));
+    const ccCartao = new Map(CARTOES.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
+    return rows.filter(t => (!equipeAtiva() || veicVis.has(t.placa))
+      && (!opts || ((!opts.g && !opts.ct) || bateDono(t.placa, null, opts.g, opts.ct)) && (!opts.cc || bateCC(ccCartao.get(t.placa) || "", opts.cc))
+        && (!opts.busca || sem([t.placa, t.motorista, t.responsavel, t.estabelecimento, t.cidade].join(" ")).includes(opts.busca))));
+  }
+  function desenharTrans() {
+    const caixa = $("#cb-trans-caixa");
+    const hoje = new Date();
+    const mes = fcb.mes || (hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0"));
+    if (!TRANS_C[mes]) { garantirTrans(mes, () => { desenharTrans(); if (fcb.mes) desenharComb(); }); caixa.hidden = true; return; }
+    const rows = transFiltradas(mes, { g: fcb.gestor, ct: fcb.contrato, cc: fcb.cc, busca: fcb.busca });
+    caixa.hidden = !TRANS_C[mes].length;
+    const al = alertasTrans(rows);
+    const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
+    $("#cb-trans-info").textContent = `${nomeMes(mes)} · ${rows.length} abastecimentos · ${fmtN(rows.reduce((s, t) => s + n0(numBR(t.litros)), 0))} litros`;
+    $("#cb-trans-kpis").innerHTML = `<span class="chip vermelho">🔴 ${mais2} ${mais2 === 1 ? "dia" : "dias"} com mais de 2 abastecimentos</span><span class="chip laranja">🟠 ${acima} acima do tanque</span>`;
+    $("#tb-trans").innerHTML = al.slice(0, 500).map(a => `<tr class="${a.n > 2 ? "tem-alerta" : ""}">
+      <td>${a.dia.split("-").reverse().join("/")}</td><td><b>${esc(a.placa)}</b><small class="resp">${esc(a.modelo)}</small></td>
+      <td class="cond">${esc(a.motoristas.join(" / ") || "—")}</td><td class="num"><b>${a.n}</b></td><td class="num">${fmtN(a.litros, 2)}</td><td class="num">${fmtN(a.valor, 2)}</td>
+      <td class="det">${a.itens.map(t => `<span class="${n0(numBR(t.litros)) > a.cap * 1.05 ? "acima" : ""}">${esc(String(t.data).slice(11, 16))} · ${fmtN(n0(numBR(t.litros)), 2)} L · ${esc(t.estabelecimento || "")}${t.cidade ? " (" + esc(t.cidade) + ")" : ""}</span>`).join("")}</td>
+      <td class="alerta-txt">${a.tipos.map(esc).join("<br>")}</td></tr>`).join("") || '<tr><td colspan="8" class="info">Nenhum alerta nesse período. 👍</td></tr>';
+  }
+  // mais frequente motorista de cada placa no mês (para a coluna "Quem abastece")
+  function motoristaDoMes(mes) {
+    const m = new Map();
+    (TRANS_C[mes] || []).forEach(t => { const n = t.motorista || ""; if (!n) return; const c = m.get(t.placa) || {}; c[n] = (c[n] || 0) + 1; m.set(t.placa, c); });
+    const out = new Map();
+    m.forEach((c, p) => out.set(p, Object.keys(c).sort((a, b) => c[b] - c[a])));
+    return out;
+  }
+
+  async function subirTransacoes(m, el) {
+    const limpa = h => sem(h).replace(/[^a-z0-9/ ]/g, "").replace(/\s+/g, " ").trim();
+    const r0 = m.findIndex(l => l.some(c => limpa(c) === "codigo transacao"));
+    const cab = m[r0].map(limpa), col = n => cab.indexOf(n);
+    const ix = { codigo: col("codigo transacao"), data: col("data transacao"), placa: col("placa"), motorista: col("nome motorista"), matricula: col("matricula"),
+      responsavel: col("responsavel"), cartao: col("numero cartao"), modelo: col("modelo veiculo"), combustivel: col("tipo combustivel"), litros: col("litros"),
+      vl_litro: col("vl/litro"), valor: col("valor emissao"), hodometro: col("hodometro ou horimetro"), km_rodados: col("km rodados ou horas trabalhadas"),
+      km_litro: col("km/litro ou litros/hora"), estabelecimento: col("nome estabelecimento"), cidade: col("cidade"), uf: col("uf") };
+    if (ix.data < 0 || ix.placa < 0 || ix.litros < 0) return msg(el, "Base de transações sem as colunas DATA TRANSACAO, PLACA ou LITROS.", "erro");
+    const dataIso = v => {
+      if (typeof v === "number" && v > 20000) { const d = new Date(Math.round((v - 25569) * 86400000)); return d.toISOString().slice(0, 19).replace("T", " "); }
+      const t = String(v || "").trim(), x = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\D+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+      if (x) return `${x[3].length === 2 ? "20" + x[3] : x[3]}-${x[2].padStart(2, "0")}-${x[1].padStart(2, "0")} ${(x[4] || "00").padStart(2, "0")}:${x[5] || "00"}:${x[6] || "00"}`;
+      const iso = t.match(/^(\d{4}-\d{2}-\d{2})[ T]?(\d{2}:\d{2}(:\d{2})?)?/); return iso ? `${iso[1]} ${iso[2] ? (iso[2].length === 5 ? iso[2] + ":00" : iso[2]) : "00:00:00"}` : "";
+    };
+    const regs = [];
+    m.slice(r0 + 1).forEach(l => {
+      const txt = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).trim() : "";
+      const num = k => { const n = ix[k] >= 0 ? numBR(l[ix[k]]) : null; return n == null ? "" : n; };
+      const placa = txt("placa").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const data = dataIso(ix.data >= 0 ? l[ix.data] : "");
+      if (placa.length < 6 || !data) return;
+      regs.push({ codigo: txt("codigo"), data, mes: data.slice(0, 7), placa, motorista: txt("motorista"), matricula: txt("matricula"), responsavel: txt("responsavel"),
+        cartao: txt("cartao"), modelo: txt("modelo"), combustivel: txt("combustivel"), litros: num("litros"), vl_litro: num("vl_litro"), valor: num("valor"),
+        hodometro: num("hodometro"), km_rodados: num("km_rodados"), km_litro: num("km_litro"), estabelecimento: txt("estabelecimento"), cidade: txt("cidade"), uf: txt("uf") });
+    });
+    if (!regs.length) return msg(el, "Nenhuma transação com placa e data na planilha.", "erro");
+    let novos = 0, rep = 0;
+    for (let i = 0; i < regs.length; i += 800) {
+      msg(el, `Enviando transações ${i + 1} a ${Math.min(i + 800, regs.length)} de ${regs.length}…`);
+      const r = await api("subir_transacoes", { regs: regs.slice(i, i + 800) });
+      novos += (r.r && r.r.novos) || 0; rep += (r.r && r.r.repetidas) || 0;
+    }
+    const meses = Array.from(new Set(regs.map(r => r.mes)));
+    meses.forEach(mm => { delete TRANS_C[mm]; });
+    const al = alertasTrans(regs);
+    msg(el, `✓ Transações: ${regs.length} abastecimentos (${novos} novos${rep ? ", " + rep + " já estavam gravados" : ""}) de ${meses.map(nomeMes).join(", ")} · ${al.filter(a => a.n > 2).length} ${al.filter(a => a.n > 2).length === 1 ? "dia" : "dias"} com mais de 2 abastecimentos · ${al.reduce((s, a) => s + a.acima, 0)} acima do tanque.`, "ok");
+    if (!fcb.mes || meses.indexOf(fcb.mes) < 0) fcb.mes = fcb.mes || meses.sort().pop();
+    desenharTrans(); desenharInicio();
   }
 
   // ---------- extrato simplificado
