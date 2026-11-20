@@ -152,4 +152,9 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .cc-caixa{max-height:320px}
 .tabela tr.cc-on td{background:#e0f2f1}
 @media (max-width:700px){.ini-comb{grid-template-columns:1fr}}
-#cb-kpis .kpi b{font-size:clamp(20px,1.9vw,28px);white-space:nowrap}
+#cb-kpis .kpi b{font-size:clamp(17px,1.45vw,26px);white-space:nowrap}
+
+.graf-caixa{margin:0 0 14px}
+.graf-titulo{font-size:17px!important;text-decoration:underline dashed 2px;text-underline-offset:5px}
+.graf-area{position:relative;height:300px}
+.uso{display:inline-block;width:60px;height:8px;background:#e2e8f0;border-radius:4px;vertical-align:middle;overflow:hidden}.uso i{display:block;height:100%}
