@@ -162,3 +162,6 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .tabela th,.tabela td{vertical-align:middle}
 .cc-escolha{display:flex;flex-direction:column;gap:6px;align-items:stretch}
 .cc-escolha input{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--linha);border-radius:8px;max-width:330px}
+.ini-filtros{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ini-filtros select{font:inherit;padding:7px 10px;border:1px solid var(--linha);border-radius:8px;background:#fff}
+.tabela td small.resp{display:block;font-weight:500;color:#64748b;font-size:11.5px}
