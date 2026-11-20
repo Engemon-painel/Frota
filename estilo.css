@@ -158,3 +158,5 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .graf-titulo{font-size:17px!important;text-decoration:underline dashed 2px;text-underline-offset:5px}
 .graf-area{position:relative;height:300px}
 .uso{display:inline-block;width:60px;height:8px;background:#e2e8f0;border-radius:4px;vertical-align:middle;overflow:hidden}.uso i{display:block;height:100%}
+.tabela th.num,.tabela td.num{text-align:right}
+.tabela th,.tabela td{vertical-align:middle}
