@@ -160,3 +160,5 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .uso{display:inline-block;width:60px;height:8px;background:#e2e8f0;border-radius:4px;vertical-align:middle;overflow:hidden}.uso i{display:block;height:100%}
 .tabela th.num,.tabela td.num{text-align:right}
 .tabela th,.tabela td{vertical-align:middle}
+.cc-escolha{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.cc-escolha input{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--linha);border-radius:8px;max-width:330px}
