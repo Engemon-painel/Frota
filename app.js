@@ -141,6 +141,8 @@
     OCORRENCIAS = (d.ocorrencias || []).filter(o => o.placa).map(o => Object.assign(o, { id: Number(o.id) })).sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
     USUARIOS = d.usuarios || [];
     COMB = (d.combustivel || []).filter(x => x.placa && x.mes);
+    EXTRATO = d.extrato || [];
+    CARTOES = (d.cartoes || []).filter(x => x.cartao || x.placa);
     if (primeiro) {
       $("#user-nome").textContent = EU.nome;
       $("#user-perfil").textContent = { admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[EU.perfil] || EU.perfil;
@@ -532,7 +534,7 @@
   // ------------------------------------------------------------------ consumo de combustível
   // relatório da Ticket Log: uma linha por placa e combustível no mês. Cada placa fica ligada ao condutor
   // do mês (linha do tempo); carros coringa ficam numa tabela à parte.
-  let COMB = [];
+  let COMB = [], EXTRATO = [], CARTOES = [];
   const fcb = { mes: "", gestor: "", comb: "", cc: "", busca: "", alerta: false };
   const numBR = v => {
     if (typeof v === "number") return v;
@@ -547,7 +549,7 @@
   const nomeMes = m => { if (!m) return ""; const [a, b] = m.split("-"); return ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(b) - 1] + "/" + a; };
   // coringa: cartão/carro sem condutor fixo (modelo "CARTAO CORINGA", placa COR0001…, ou condutor/tipo de uso/status "coringa")
   const ehCoringa = (r, v) => /^COR\d{4}$/.test(String(r.placa || "")) || /coringa/.test(sem(r.condutores) + " " + sem(r.modelo) + " " + sem(r.tipo_uso) + " " + (v ? sem(v.condutor) + " " + sem(v.modelo) + " " + sem(v.tipo_uso) + " " + sem(v.status) : ""));
-  (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); $("#cb-mes-up").value = d.toISOString().slice(0, 7); })();
+  (() => { const d = new Date(); $("#cb-mes-up").value = d.toISOString().slice(0, 7); })();
 
   $("#arq-comb").addEventListener("change", async e => {
     const arq = e.target.files[0]; e.target.value = "";
@@ -563,6 +565,11 @@
         const linhasTxt = txt.replace(/^\uFEFF/, "").split(/\r?\n/).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, "").trim()));
         wb = { SheetNames: ["csv"], Sheets: { csv: XLSX.utils.aoa_to_sheet(linhasTxt) } };
       } else wb = XLSX.read(buf, { type: "array", cellDates: false, raw: true });
+      // Extrato Simplificado (limite do contrato e saldo de cada cartão)? → outra leitura
+      for (const nome of wb.SheetNames) {
+        const t = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
+        if (/saldo contratual|extrato simplificado/.test(sem(t.slice(0, 60).map(l => l.join(" ")).join(" ")))) return await subirExtrato(t, el);
+      }
       let m = null, r0 = -1;
       for (const nome of wb.SheetNames) {
         const t = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
@@ -593,12 +600,13 @@
       ix.saldo = cab2.indexOf("saldo") >= 0 ? cab2.indexOf("saldo") : (iCartao >= 0 ? iCartao + 1 : -1);
       const faltam = ["litros", "total"].filter(k => ix[k] < 0);
       if (faltam.length) return msg(el, "Não achei as colunas: " + faltam.join(", "), "erro");
-      const regs = [], pendentes = [];
+      const regs = [], pendentes = [], vistos = new Set();
+      let totalCC = 0, temCC = false, totalComb = 0, repetidas = 0;
       m.slice(r0 + 1).forEach(l => {
         const c0 = String(l[0] == null ? "" : l[0]);
         const cc = sem(c0).match(/^centro de custo\s*:?\s*(.*)$/);
-        if (/^combust/.test(sem(c0))) return;
-        if (cc) { const nomeCc = c0.split(":").slice(1).join(":").replace(/\s+/g, " ").trim(); pendentes.forEach(r => { r.centro_custo = nomeCc; }); pendentes.length = 0; return; }
+        if (/^combust/.test(sem(c0))) { totalComb += n0(numBR(l[ix.total])); return; }
+        if (cc) { temCC = true; totalCC += n0(numBR(l[ix.total])); const nomeCc = c0.split(":").slice(1).join(":").replace(/\s+/g, " ").trim(); pendentes.forEach(r => { r.centro_custo = nomeCc; }); pendentes.length = 0; return; }
         const placa = String(l[ix.placa] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (!/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa)) return;
         const txt = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).trim() : "";
@@ -607,6 +615,10 @@
           limite: num("limite"), saldo: num("saldo"), ultima_km: num("ultima_km"), km_rodados: num("km_rodados"), litros: num("litros"),
           valor_litro: num("valor_litro"), km_litro: num("km_litro"), total: num("total"), centro_custo: "" };
         Object.keys(r).forEach(k => { if (r[k] === null) r[k] = ""; });
+        // a mesma linha repetida no relatório (mesma placa, combustível e valores) entra uma vez só
+        const chave = [placa, r.combustivel, r.litros, r.total, r.km_rodados].join("|");
+        if (vistos.has(chave)) { repetidas++; return; }
+        vistos.add(chave);
         regs.push(r); pendentes.push(r);
       });
       if (!regs.length) return msg(el, "Nenhuma placa encontrada na planilha.", "erro");
@@ -615,7 +627,11 @@
       await api("subir_combustivel", { mes, periodo, regs });
       fcb.mes = mes; montarFiltrosComb(); desenharComb(); desenharInicioComb();
       const fora = COMB.filter(x => x.mes === mes && x.na_frota === "NAO").length;
-      msg(el, `✓ ${regs.length} linhas de ${nomeMes(mes)} gravadas.` + (fora ? ` ${fora} placa(s) não estão cadastradas na frota.` : ""), "ok");
+      // confere com o total que o próprio relatório traz (linhas CENTRO DE CUSTO / Combustível)
+      const lido = regs.reduce((a, r) => a + n0(r.total), 0);
+      const doRel = temCC ? totalCC : totalComb;
+      const confere = doRel ? (Math.abs(doRel - lido) < 1 ? ` Total confere com o relatório: R$ ${fmtN(lido, 2)}.` : ` ⚠ Total lido R$ ${fmtN(lido, 2)} × total do relatório R$ ${fmtN(doRel, 2)} (me mande o arquivo para eu conferir).`) : ` Total lido: R$ ${fmtN(lido, 2)}.`;
+      msg(el, `✓ ${regs.length} linhas de ${nomeMes(mes)} gravadas.` + confere + (repetidas ? ` ${repetidas} linha(s) repetida(s) ignorada(s).` : "") + (fora ? ` ${fora} placa(s) não estão cadastradas na frota.` : ""), doRel && Math.abs(doRel - lido) >= 1 ? "erro" : "ok");
     } catch (err) { msg(el, "Erro ao subir: " + (err.message || err), "erro"); }
   });
 
@@ -628,7 +644,7 @@
     const doMes = COMB.filter(x => x.mes === fcb.mes);
     op("#cb-gestor", Array.from(new Set(doMes.map(x => x.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
     op("#cb-comb", Array.from(new Set(doMes.map(x => x.combustivel).filter(Boolean))).sort(), "Todos os combustíveis");
-    op("#cb-cc", Array.from(new Set(doMes.map(x => x.centro_custo).filter(Boolean))).sort(), "Todos os centros de custo");
+    op("#cb-cc", Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort(), "Todos os centros de custo");
     $("#cb-cc").value = fcb.cc;
     fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = $("#cb-cc").value;
   }
@@ -674,6 +690,7 @@
   }
   function desenharComb() {
     $("#cb-cab").innerHTML = CAB_CB("Condutor"); $("#cb-cab2").innerHTML = CAB_CB("Condutor / uso no mês");
+    desenharCartoes();
     if (!COMB.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="13" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Escolha o mês e clique em Subir consumo." : ""}</td></tr>`; $("#tb-comb-cor").innerHTML = ""; $("#cb-info").textContent = ""; return; }
     const lista = consumoPorPlaca();
     const cond = lista.filter(p => !p.coringa).sort((a, b) => (a.condutor ? 0 : 1) - (b.condutor ? 0 : 1) || sem(a.condutor).localeCompare(sem(b.condutor)) || a.placa.localeCompare(b.placa));
@@ -717,35 +734,172 @@
     XLSX.writeFile(wb, `Combustivel_${fcb.mes}.xlsx`);
   });
 
-  // início: cartões "Limite disponível" e "Gasto no mês" (último mês enviado; filtra por centro de custo)
+  // ---------- extrato simplificado
+  async function subirExtrato(m, el) {
+    const limpa = h => sem(h).replace(/[^a-z0-9/ ]/g, "").replace(/\s+/g, " ").trim();
+    const dinheiro = v => numBR(String(v == null ? "" : v).split("=")[0]);
+    const rh = m.findIndex(l => l.some(c => limpa(c) === "cartao") && l.some(c => limpa(c) === "placa"));
+    const res = {}; let secao = "";
+    m.slice(0, rh < 0 ? 80 : rh).forEach(l => {
+      const rot = limpa(l[0]); if (!rot) return;
+      const val = l.slice(1).map(c => String(c == null ? "" : c).trim()).find(Boolean) || "";
+      if (rot.startsWith("limite dos cartoes periodo atual")) { secao = "atual"; return; }
+      if (rot.startsWith("limite dos cartoes proxima")) { secao = "prox"; return; }
+      if (rot.startsWith("filtros")) { secao = "fim"; return; }
+      if (!val) return;
+      if (rot === "limite contratual") res.limite_contratual = dinheiro(val);
+      else if (rot.startsWith("valor contratual consumido")) { res.consumido_contratual = dinheiro(val); const p = val.match(/=\s*([\d.,]+)\s*%/); if (p) res.pct_consumido = numBR(p[1]); }
+      else if (rot.startsWith("saldo contratual")) res.saldo_contratual = dinheiro(val);
+      else if (secao === "atual" && rot === "limite total") res.limite_total = dinheiro(val);
+      else if (secao === "atual" && rot.startsWith("limite distribuido")) res.limite_distribuido = dinheiro(val);
+      else if (secao === "atual" && rot.startsWith("valor disponivel")) res.disponivel_alocacao = dinheiro(val);
+      else if (secao === "atual" && rot.startsWith("valor consumido")) res.consumido_compras = dinheiro(val);
+      else if (secao === "prox" && rot.startsWith("data da proxima")) res.proxima_renovacao = val;
+      else if (secao === "prox" && rot.startsWith("limite distribuido")) res.limite_distribuido_prox = dinheiro(val);
+    });
+    const dt = m.slice(0, 15).map(l => l.join(" ")).join(" ").match(/\d{2}\/\d{2}\/\d{4}/);
+    res.data_ref = dt && !/renova/i.test(m.slice(0, 15).map(l => l.join(" ")).join(" ").split(dt[0])[0].slice(-60)) ? dt[0] : new Date().toLocaleDateString("pt-BR");
+    const cartoes = [];
+    if (rh >= 0) {
+      const cab = m[rh].map(limpa), cab2 = (m[rh + 1] || []).map(limpa);
+      const c1 = t => cab.findIndex(t), c2 = t => cab2.findIndex(t);
+      const ix = { cartao: c1(h => h === "cartao"), placa: c1(h => h === "placa"), nr_frota: c1(h => h.startsWith("nr")), familia: c1(h => h.startsWith("famil")),
+        tipo_frota: c1(h => h.startsWith("tipo frota")), modelo: c1(h => h === "modelo"), fabricante: c1(h => h.startsWith("fabric")), cidade: c1(h => h.startsWith("cidade")),
+        responsavel: c1(h => h.startsWith("nome resp")), limite_proximo: c1(h => h.startsWith("limite proximo")),
+        valor_reservado: c2(h => h.startsWith("valor reserv")), limite_atual: c2(h => h.startsWith("limite atual")), utilizado: c2(h => h.startsWith("compras")), saldo: c2(h => h === "saldo") };
+      const corpo = m.slice(rh + 2);
+      const so1 = l => l.filter(c => String(c == null ? "" : c).trim() !== "").length === 1 && String(l[0] == null ? "" : l[0]).trim() !== "";
+      const ehCartao = l => /\*|\d{4}\s?\d{2}/.test(String(l[ix.cartao] == null ? "" : l[ix.cartao])) && String(l[ix.placa] || l[ix.cartao] || "").trim() !== "";
+      let cc = "", grupo = "";
+      corpo.forEach((l, i) => {
+        if (so1(l)) {
+          const prox = corpo.slice(i + 1).find(x => x.some(c => String(c == null ? "" : c).trim() !== ""));
+          if (prox && so1(prox)) { cc = String(l[0]).trim(); grupo = ""; } else grupo = String(l[0]).trim();
+          return;
+        }
+        if (!ehCartao(l)) return;
+        const txt = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).trim() : "";
+        const num = k => ix[k] >= 0 ? numBR(l[ix[k]]) : null;
+        const r = { cartao: txt("cartao"), placa: txt("placa").toUpperCase().replace(/[^A-Z0-9]/g, ""), centro_custo: cc, grupo, nr_frota: txt("nr_frota"), familia: txt("familia"),
+          tipo_frota: txt("tipo_frota"), modelo: txt("modelo"), fabricante: txt("fabricante"), cidade: txt("cidade"), responsavel: txt("responsavel"),
+          valor_reservado: num("valor_reservado"), limite_atual: num("limite_atual"), utilizado: num("utilizado"), saldo: num("saldo"), limite_proximo: num("limite_proximo") };
+        Object.keys(r).forEach(k => { if (r[k] === null) r[k] = ""; });
+        cartoes.push(r);
+      });
+    }
+    if (res.saldo_contratual == null && !cartoes.length) return msg(el, "Não consegui ler o Extrato Simplificado.", "erro");
+    msg(el, `Enviando extrato (${cartoes.length} cartões)…`);
+    await api("subir_extrato", { dados: res, regs: cartoes });
+    montarFiltrosComb(); desenharComb(); desenharInicioComb();
+    const soma = cartoes.reduce((a, c) => a + n0(c.utilizado), 0);
+    msg(el, `✓ Extrato de ${res.data_ref} gravado: saldo contratual R$ ${fmtN(res.saldo_contratual, 2)}, consumido no período R$ ${fmtN(res.consumido_compras, 2)}, ${cartoes.length} cartões (compras somadas R$ ${fmtN(soma, 2)}).`, "ok");
+  }
+
+  // tabela de saldo dos cartões (último extrato) na tela de combustível
+  function desenharCartoes() {
+    const caixa = $("#cb-cartoes-caixa");
+    if (!CARTOES.length) { caixa.hidden = true; return; }
+    caixa.hidden = false;
+    const veic = new Map(VEICULOS.map(v => [v.placa, v]));
+    const ls = CARTOES.filter(c => (!fcb.cc || c.centro_custo === fcb.cc) && (!fcb.gestor || (veic.get(c.placa) || {}).gestor_operacao === fcb.gestor)
+      && (!fcb.busca || sem([c.cartao, c.placa, c.responsavel, c.centro_custo, c.modelo].join(" ")).includes(fcb.busca)))
+      .map(c => Object.assign({}, c, { pct: n0(c.limite_atual) > 0 ? n0(c.utilizado) / n0(c.limite_atual) * 100 : 0 })).sort((a, b) => b.pct - a.pct);
+    $("#cb-cartoes-info").textContent = `extrato de ${CARTOES[0].data_ref || "-"} · ${ls.length} cartões`;
+    const s = ls.reduce((a, c) => ({ l: a.l + n0(c.limite_atual), u: a.u + n0(c.utilizado), s: a.s + n0(c.saldo) }), { l: 0, u: 0, s: 0 });
+    $("#tb-cartoes").innerHTML = ls.map(c => `<tr class="${c.pct >= 90 ? "tem-alerta" : ""}"><td>${esc(c.cartao)}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.responsavel)}</td><td>${esc(c.centro_custo)}</td><td>${esc(c.modelo)}</td>
+      <td class="num">${fmtN(n0(c.limite_atual), 2)}</td><td class="num">${fmtN(n0(c.utilizado), 2)}</td><td class="num"><b>${fmtN(n0(c.saldo), 2)}</b></td>
+      <td class="num"><span class="uso"><i style="width:${Math.min(100, c.pct)}%;background:${c.pct >= 90 ? "#b91c1c" : c.pct >= 70 ? "#ea580c" : "#0e7c86"}"></i></span> ${fmtN(c.pct, 0)}%</td></tr>`).join("")
+      + `<tr><td colspan="5"><b>Total</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.u, 2)}</b></td><td class="num"><b>${fmtN(s.s, 2)}</b></td><td class="num"><b>${s.l ? fmtN(s.u / s.l * 100, 0) + "%" : "-"}</b></td></tr>`;
+  }
+
+  // início: cartões "Limite disponível" e "Gasto no mês" (mês atual; filtra por centro de custo)
   function desenharInicioComb() {
-    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort();
-    $("#ini-comb").hidden = !meses.length;
-    if (!meses.length) return;
-    const mes = meses[meses.length - 1];
+    const ext = EXTRATO[0];
+    $("#ini-comb").hidden = !COMB.length && !CARTOES.length && !ext;
+    if ($("#ini-comb").hidden) { $("#ini-graf-caixa").hidden = true; return; }
+    // só o mês atual
+    const hoje = new Date();
+    const mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
     const doMes = COMB.filter(x => x.mes === mes);
     const sel = $("#ic-cc"), v0 = sel.value;
-    const ccs = Array.from(new Set(doMes.map(x => x.centro_custo).filter(Boolean))).sort();
+    const ccs = Array.from(new Set(doMes.map(x => x.centro_custo).concat(CARTOES.map(x => x.centro_custo)).filter(Boolean))).sort();
     sel.innerHTML = '<option value="">Todos os centros de custo</option>' + ccs.map(c => `<option>${esc(c)}</option>`).join("");
     sel.value = ccs.indexOf(v0) >= 0 ? v0 : "";
-    const rs = doMes.filter(x => !sel.value || x.centro_custo === sel.value);
-    const porPlaca = new Map();
-    rs.forEach(x => { if (!porPlaca.has(x.placa) && x.saldo !== "") porPlaca.set(x.placa, x); });
-    const saldo = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.saldo), 0);
-    const limite = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.limite), 0);
-    const gasto = rs.reduce((a, x) => a + n0(x.total), 0), litros = rs.reduce((a, x) => a + n0(x.litros), 0);
+    const cc = sel.value;
+    const rs = doMes.filter(x => !cc || x.centro_custo === cc);
+    const litros = rs.reduce((a, x) => a + n0(x.litros), 0);
+    const ca = CARTOES.filter(x => !cc || x.centro_custo === cc);
     const per = (doMes.find(x => x.periodo) || {}).periodo;
+    let saldo, sub, gasto, periodo, det;
+    if (ext && !cc) {
+      // contrato inteiro: números do Extrato Simplificado (iguais ao portal)
+      saldo = n0(ext.saldo_contratual);
+      sub = `${fmtN(100 - n0(ext.pct_consumido), 2)}% disponível${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""}`;
+      gasto = n0(ext.consumido_compras);
+      periodo = `período atual${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""} · extrato de ${ext.data_ref}`;
+      det = `${ca.length} cartões` + (litros ? ` · ${fmtN(litros)} litros no relatório de ${nomeMes(mes)}` : "") + ` · ${ccs.length} centros de custo`;
+    } else if (ca.length) {
+      // um centro de custo (ou login de equipe): soma dos cartões do extrato
+      saldo = ca.reduce((a, x) => a + n0(x.saldo), 0);
+      const lim = ca.reduce((a, x) => a + n0(x.limite_atual), 0);
+      sub = `de R$ ${fmtN(lim, 2)} de limite · ${ca.length} ${ca.length === 1 ? "cartão" : "cartões"}`;
+      gasto = ca.reduce((a, x) => a + n0(x.utilizado), 0);
+      periodo = `período atual · extrato de ${ca[0].data_ref || "-"}`;
+      det = (litros ? `${fmtN(litros)} litros · ` : "") + `${new Set(ca.map(x => x.placa)).size} carro(s)`;
+    } else {
+      // sem extrato: usa o relatório de consumo do mês
+      const porPlaca = new Map();
+      rs.forEach(x => { if (!porPlaca.has(x.placa) && x.saldo !== "") porPlaca.set(x.placa, x); });
+      saldo = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.saldo), 0);
+      const lim = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.limite), 0);
+      sub = lim ? `de R$ ${fmtN(lim, 2)} de limite · ${porPlaca.size} ${porPlaca.size === 1 ? "cartão" : "cartões"} (suba o Extrato Simplificado para o saldo do contrato)` : "";
+      gasto = rs.reduce((a, x) => a + n0(x.total), 0);
+      periodo = doMes.length ? (per ? per + " · " + nomeMes(mes) : nomeMes(mes)) : "Ainda não subiu o consumo de " + nomeMes(mes);
+      det = `${fmtN(litros)} litros · ${new Set(rs.map(x => x.placa)).size} carro(s)`;
+    }
     $("#ic-saldo").textContent = "R$ " + fmtN(saldo, 2);
-    $("#ic-limite").textContent = limite ? `de R$ ${fmtN(limite, 2)} de limite · ${porPlaca.size} ${porPlaca.size === 1 ? "cartão" : "cartões"}` : "";
-    $("#ic-periodo").textContent = per || nomeMes(mes);
+    $("#ic-limite").textContent = sub;
+    $("#ic-periodo").textContent = periodo;
     $("#ic-gasto").textContent = "R$ " + fmtN(gasto, 2);
-    $("#ic-det").textContent = `${fmtN(litros)} litros · ${new Set(rs.map(x => x.placa)).size} carro(s)` + (sel.value ? "" : ` · ${ccs.length} centros de custo`);
+    $("#ic-det").textContent = det;
+    desenharGrafComb(sel.value);
   }
+  // gráfico: barras por combustível em cada mês + linha do total (como no portal da Ticket Log)
+  const GRUPOS_COMB = [["Diesel", "#3a3a3a", t => t.includes("diesel")], ["Etanol", "#0f9d7a", t => t.includes("etanol") || t.includes("alcool")],
+    ["Gás natural", "#11b5e4", t => t.includes("gnv") || t.includes("gas natural")], ["Gasolina", "#f0291f", t => t.includes("gasolina")], ["Não especificado", "#111111", () => true]];
+  let GRAF = null;
+  function desenharGrafComb(cc) {
+    const caixa = $("#ini-graf-caixa");
+    if (!window.Chart || !COMB.length) { caixa.hidden = true; return; }
+    caixa.hidden = false;
+    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort().slice(-12);
+    const soma = {};
+    COMB.filter(x => !cc || x.centro_custo === cc).forEach(x => {
+      const t = sem(x.combustivel); const g = GRUPOS_COMB.find(gr => gr[2](t))[0];
+      soma[x.mes + "|" + g] = (soma[x.mes + "|" + g] || 0) + n0(x.total);
+    });
+    const rot = meses.map(m => nomeMes(m).split("/")[0].replace(/^./, c => c.toUpperCase()) + (new Set(meses.map(x => x.slice(0, 4))).size > 1 ? "/" + m.slice(2, 4) : ""));
+    const usados = GRUPOS_COMB.filter(g => meses.some(m => soma[m + "|" + g[0]]));
+    const barras = usados.map(g => ({ type: "bar", label: g[0], data: meses.map(m => Math.round((soma[m + "|" + g[0]] || 0) * 100) / 100), backgroundColor: g[1],
+      borderRadius: 12, borderSkipped: false, barPercentage: 0.55, categoryPercentage: 0.7, maxBarThickness: 22, order: 2 }));
+    const total = { type: "line", label: "Total", data: meses.map((m, i) => barras.reduce((a, b) => a + b.data[i], 0)), borderColor: "#111", backgroundColor: "#fff",
+      borderWidth: 2.5, pointRadius: 5, pointHoverRadius: 7, pointBorderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#111", tension: 0, order: 1 };
+    $("#ini-graf-cc").textContent = cc ? "· " + cc : "";
+    const real = v => "R$ " + Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+    const cfg = { data: { labels: rot, datasets: [total].concat(barras) },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", color: "#334155", font: { size: 13, weight: "600" }, padding: 16 } },
+          tooltip: { callbacks: { label: c => ` ${c.dataset.label}: R$ ${Number(c.raw).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } },
+        scales: { x: { grid: { display: false }, ticks: { color: "#334155", font: { size: 13, weight: "600" } } },
+          y: { beginAtZero: true, ticks: { color: "#64748b", callback: real, maxTicksLimit: 6 }, grid: { color: "#e2e8f0" }, border: { display: false } } } } };
+    if (GRAF) GRAF.destroy();
+    GRAF = new Chart($("#ini-graf"), cfg);
+  }
+  $("#ini-graf-caixa").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc").addEventListener("click", e => e.stopPropagation());
   $("#ic-cc").addEventListener("change", () => desenharInicioComb());
   $$("#ini-comb [data-ir]").forEach(el => el.addEventListener("click", () => {
-    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort();
-    fcb.mes = meses[meses.length - 1] || ""; fcb.cc = $("#ic-cc").value;
+    const hoje = new Date(); fcb.mes = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0"); fcb.cc = $("#ic-cc").value;
     montarFiltrosComb(); $("#cb-cc").value = fcb.cc; fcb.cc = $("#cb-cc").value; desenharComb(); irPara("combustivel");
   }));
 
