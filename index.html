@@ -47,6 +47,8 @@
           <button class="ms" data-acao="nova-placa" data-so-admin hidden>+ Nova placa</button>
           <button class="ms aba" data-aba="usuarios" data-so-admin hidden>Usuários</button>
           <button class="ms" data-acao="carga" data-so-admin hidden>Carga inicial (planilha)</button>
+          <button class="ms aba" data-aba="hierarquia">Hierarquia (equipes)</button>
+          <button class="ms" data-acao="organograma" data-so-gerente hidden>Preencher pelo Organograma</button>
         </div>
       </div>
       <div class="grupo aberto">
@@ -99,6 +101,8 @@
           <h1>Veículos</h1>
           <div class="acoes">
             <button class="bt bt-pri" id="bt-novo-veic" data-so-admin hidden>+ Nova placa</button>
+            <button class="bt bt-sec" id="bt-org" data-so-gerente hidden title="Preenche supervisor e coordenador dos carros pelo Organograma da Claro">👥 Preencher pelo Organograma</button>
+            <input id="arq-org" type="file" accept=".xlsx,.xls,.xlsm" hidden>
             <button class="bt bt-sec" id="bt-exportar">⬇ Exportar Excel</button>
             <label class="bt bt-sec" for="arq-frota" data-so-admin hidden title="Usar só uma vez, para trazer a base de hoje">⬆ Carga inicial (planilha)</label>
             <input id="arq-frota" type="file" accept=".xlsx,.xls" hidden>
@@ -196,6 +200,26 @@
         <div class="tabela-caixa"><table class="tabela tab-comb"><thead id="cb-cab2"></thead><tbody id="tb-comb-cor"></tbody></table></div>
       </div>
 
+      <!-- HIERARQUIA: colaborador → supervisor / coordenador / gerente -->
+      <div id="aba-hierarquia" class="aba-conteudo" hidden>
+        <div class="linha-titulo"><h1>Hierarquia (equipes)</h1>
+          <div class="acoes">
+            <button class="bt bt-pri" id="bt-hi-novo" data-so-gerente hidden>+ Adicionar colaborador</button>
+            <label class="bt bt-sec" for="arq-hier" data-so-gerente hidden>⬆ Subir De-Para (Excel)</label><input id="arq-hier" type="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+            <button class="bt bt-sec" id="bt-hi-exp">⬇ Baixar Excel</button>
+          </div></div>
+        <p class="nota">Quem é o <b>supervisor</b>, o <b>coordenador</b> e o <b>gerente</b> de cada colaborador. O carro pega o supervisor e o coordenador do <b>condutor</b> sozinho — na hora de gravar aqui e sempre que o condutor do carro mudar. Cada gerente cuida da própria equipe.</p>
+        <p id="hi-msg" class="msg"></p>
+        <div class="filtros">
+          <select id="hi-gerente"><option value="">Todos os gerentes</option></select>
+          <select id="hi-coord"><option value="">Todos os coordenadores</option></select>
+          <select id="hi-sup"><option value="">Todos os supervisores</option></select>
+          <input id="hi-busca" type="search" placeholder="Buscar colaborador, supervisor, placa…">
+          <span id="hi-info" class="info"></span>
+        </div>
+        <div class="tabela-caixa"><table class="tabela"><thead><tr><th>Colaborador</th><th>Matrícula</th><th>Supervisor</th><th>Coordenador</th><th>Gerente</th><th>Carro (condutor)</th><th>Atualizado por</th><th></th></tr></thead><tbody id="tb-hier"></tbody></table></div>
+      </div>
+
       <!-- OCORRÊNCIAS -->
       <div id="aba-ocorrencias" class="aba-conteudo" hidden>
         <div class="linha-titulo"><h1>Ocorrências</h1>
@@ -251,13 +275,13 @@
   </section>
 
   <!-- janela (detalhe do veículo, nova ocorrência) -->
-  <datalist id="dl-cc"></datalist><datalist id="dl-operacao"></datalist><datalist id="dl-gestor"></datalist><datalist id="dl-status"></datalist>
+  <datalist id="dl-cc"></datalist><datalist id="dl-hi-sup"></datalist><datalist id="dl-hi-coord"></datalist><datalist id="dl-hi-ger"></datalist><datalist id="dl-operacao"></datalist><datalist id="dl-gestor"></datalist><datalist id="dl-status"></datalist>
   <datalist id="dl-tipo"></datalist><datalist id="dl-comb"></datalist><datalist id="dl-pessoas"></datalist>
   <div id="modal" class="modal" hidden><div class="modal-caixa" role="dialog" aria-modal="true"><button class="modal-x" id="modal-x" aria-label="Fechar">×</button><div id="modal-corpo"></div></div></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=27"></script>
 </body>
 </html>
