@@ -545,7 +545,8 @@
   const n0 = v => { const n = Number(v); return isFinite(n) ? n : 0; };
   const fmtN = (v, c = 0) => v == null || !isFinite(v) ? "-" : v.toLocaleString("pt-BR", { minimumFractionDigits: c, maximumFractionDigits: c });
   const nomeMes = m => { if (!m) return ""; const [a, b] = m.split("-"); return ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(b) - 1] + "/" + a; };
-  const ehCoringa = (r, v) => /coringa/.test(sem(r.condutores) + " " + sem(r.tipo_uso) + " " + (v ? sem(v.condutor) + " " + sem(v.tipo_uso) + " " + sem(v.status) : ""));
+  // coringa: cartão/carro sem condutor fixo (modelo "CARTAO CORINGA", placa COR0001…, ou condutor/tipo de uso/status "coringa")
+  const ehCoringa = (r, v) => /^COR\d{4}$/.test(String(r.placa || "")) || /coringa/.test(sem(r.condutores) + " " + sem(r.modelo) + " " + sem(r.tipo_uso) + " " + (v ? sem(v.condutor) + " " + sem(v.modelo) + " " + sem(v.tipo_uso) + " " + sem(v.status) : ""));
   (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); $("#cb-mes-up").value = d.toISOString().slice(0, 7); })();
 
   $("#arq-comb").addEventListener("change", async e => {
@@ -554,7 +555,14 @@
     const el = $("#cb-msg");
     try {
       msg(el, "Lendo " + arq.name + "…");
-      const wb = XLSX.read(await arq.arrayBuffer(), { type: "array", cellDates: false });
+      const buf = await arq.arrayBuffer();
+      let wb;
+      if (/\.(csv|txt)$/i.test(arq.name)) {
+        let txt; try { txt = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e2) { txt = new TextDecoder("windows-1252").decode(buf); }
+        const sep = (txt.split("\n").slice(0, 10).join("").match(/;/g) || []).length > (txt.split("\n").slice(0, 10).join("").match(/\t/g) || []).length ? ";" : (/\t/.test(txt) ? "\t" : ";");
+        const linhasTxt = txt.replace(/^\uFEFF/, "").split(/\r?\n/).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, "").trim()));
+        wb = { SheetNames: ["csv"], Sheets: { csv: XLSX.utils.aoa_to_sheet(linhasTxt) } };
+      } else wb = XLSX.read(buf, { type: "array", cellDates: false, raw: true });
       let m = null, r0 = -1;
       for (const nome of wb.SheetNames) {
         const t = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
@@ -570,15 +578,17 @@
       let mes = $("#cb-mes-up").value;
       if (dt && `${dt[3]}-${dt[2]}` !== mes && window.confirm(`A planilha fala de ${dt[1]}/${dt[2]}/${dt[3]}. Gravar como ${nomeMes(dt[3] + "-" + dt[2])}?`)) { mes = `${dt[3]}-${dt[2]}`; $("#cb-mes-up").value = mes; }
       if (!mes) return msg(el, "Escolha o mês da planilha.", "erro");
-      const cab = m[r0].map(sem), cab2 = (m[r0 + 1] || []).map(sem);
+      // títulos sem acento e sem símbolos (aceita "Combust�vel" de arquivo com acento quebrado)
+      const limpa = h => sem(h).replace(/[^a-z0-9/ ]/g, "").replace(/\s+/g, " ").trim();
+      const cab = m[r0].map(limpa), cab2 = (m[r0 + 1] || []).map(limpa);
       const col = teste => cab.findIndex(teste);
       const ix = {
         placa: col(h => h === "placa"), modelo: col(h => h === "modelo"), marca: col(h => h === "marca"), ano: col(h => h === "ano"),
-        combustivel: col(h => h.includes("combustivel")), ultima_km: col(h => h.startsWith("ultima km")), km_rodados: col(h => h.startsWith("km rodados")),
-        litros: col(h => h === "litros"), valor_litro: col(h => h.startsWith("valor medio")), km_litro: col(h => h.startsWith("km por litro")),
+        combustivel: col(h => h.includes("combust")), ultima_km: col(h => /ltima km/.test(h)), km_rodados: col(h => h.startsWith("km rodado")),
+        litros: col(h => h === "litros"), valor_litro: col(h => /^valor m/.test(h)), km_litro: col(h => /^km p/.test(h)),
         total: col(h => h.startsWith("total")),
       };
-      const iCartao = col(h => h.startsWith("cartao"));
+      const iCartao = col(h => /^cart/.test(h));
       ix.limite = cab2.indexOf("limite") >= 0 ? cab2.indexOf("limite") : iCartao;
       ix.saldo = cab2.indexOf("saldo") >= 0 ? cab2.indexOf("saldo") : (iCartao >= 0 ? iCartao + 1 : -1);
       const faltam = ["litros", "total"].filter(k => ix[k] < 0);
@@ -587,6 +597,7 @@
       m.slice(r0 + 1).forEach(l => {
         const c0 = String(l[0] == null ? "" : l[0]);
         const cc = sem(c0).match(/^centro de custo\s*:?\s*(.*)$/);
+        if (/^combust/.test(sem(c0))) return;
         if (cc) { const nomeCc = c0.split(":").slice(1).join(":").replace(/\s+/g, " ").trim(); pendentes.forEach(r => { r.centro_custo = nomeCc; }); pendentes.length = 0; return; }
         const placa = String(l[ix.placa] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (!/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa)) return;
@@ -657,7 +668,7 @@
   function linhasComb(lista, vazio) {
     if (!lista.length) return `<tr><td colspan="13" class="info">${vazio}</td></tr>`;
     const s = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
-    return lista.map(p => `<tr class="clica${p.alerta ? " tem-alerta" : ""}" data-placa="${esc(p.placa)}"><td class="cond">${esc(p.condutor || "Sem condutor na linha do tempo")}</td><td><b>${esc(p.placa)}</b>${p.naFrota ? "" : ' <span class="tag">fora da frota</span>'}</td><td>${esc(p.modelo)}</td><td>${esc(p.combs.join(" + "))}</td><td>${esc(p.gestor)}</td>
+    return lista.map(p => `<tr class="clica${p.alerta ? " tem-alerta" : ""}" data-placa="${esc(p.placa)}"><td class="cond">${esc(p.condutor || (p.coringa ? "Cartão coringa" : "Sem condutor na linha do tempo"))}</td><td><b>${esc(p.placa)}</b>${p.naFrota ? "" : ' <span class="tag">fora da frota</span>'}</td><td>${esc(p.modelo)}</td><td>${esc(p.combs.join(" + "))}</td><td>${esc(p.gestor)}</td>
       <td class="num">${fmtN(p.km)}</td><td class="num">${fmtN(p.litros, 2)}</td><td class="num">${fmtN(p.rsl, 2)}</td><td class="num${p.alerta ? " alerta-km" : ""}">${fmtN(p.kml, 2)}</td><td class="num">${fmtN(p.total, 2)}</td><td class="num">${p.saldo === "" || p.saldo == null ? "-" : fmtN(n0(p.saldo), 2)}</td><td>${esc(p.cc)}</td><td class="info">${esc(p.alerta)}</td></tr>`).join("")
       + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "carro" : "carros"})</b></td><td class="num"><b>${fmtN(s.km)}</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.t / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.km / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.t, 2)}</b></td><td colspan="3"></td></tr>`;
   }
