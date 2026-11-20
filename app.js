@@ -140,6 +140,7 @@
     HIST = (d.historico || []).filter(h => h.placa).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
     OCORRENCIAS = (d.ocorrencias || []).filter(o => o.placa).map(o => Object.assign(o, { id: Number(o.id) })).sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
     USUARIOS = d.usuarios || [];
+    COMB = (d.combustivel || []).filter(x => x.placa && x.mes);
     if (primeiro) {
       $("#user-nome").textContent = EU.nome;
       $("#user-perfil").textContent = { admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[EU.perfil] || EU.perfil;
@@ -153,6 +154,7 @@
     if (!$("#h-q-data").value) $("#h-q-data").value = paraInput(new Date());
     $("#dl-pessoas").innerHTML += Array.from(new Set(HIST.map(h => h.condutor))).map(c => `<option value="${esc(c)}">`).join("");
     desenharOcorrencias(); desenharHistorico(); desenharInicio();
+    montarFiltrosComb(); desenharComb();
     if (EU.perfil === "admin") desenharUsuarios();
   }
   if (SESSAO && SESSAO.token) entrar(); else mostrarLogin("");
@@ -282,6 +284,7 @@
     const cs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]); const mx = Math.max(1, ...cs.map(c => porC[c]));
     $("#ini-contratos").innerHTML = cs.length ? cs.map(c => `<div class="barra-c"><span title="${esc(c)}">${esc(c)}</span><div class="b" style="width:${porC[c] / mx * 100}%"></div><b>${porC[c]}</b></div>`).join("") : '<p class="info">Nenhum veículo ainda.</p>';
     $("#ini-trocas").innerHTML = HIST.filter(h => h.origem !== "planilha").slice(0, 8).map(h => `<li><b>${esc(h.placa)}</b><span>${esc(h.condutor)}</span><span class="info">${dataHora(h.inicio)}</span></li>`).join("") || '<li class="info">Nenhuma troca ainda.</li>';
+    desenharInicioComb();
     $("#ini-ocor").innerHTML = abertas.slice(0, 8).map(o => `<li><b>${esc(o.placa)} · ${esc(o.tipo)}</b><span>${esc(o.condutor || "condutor não identificado")}</span><span class="info">${dataHora(o.data_hora)}</span></li>`).join("") || '<li class="info">Nenhuma ocorrência aberta.</li>';
   }
   function irPara(aba) {
@@ -525,6 +528,215 @@
       msg($("#cz-msg"), `✓ ${regs.length} ocorrências registradas.`, "ok");
     } catch (err) { msg($("#cz-msg"), "Erro: " + err.message, "erro"); }
   });
+
+  // ------------------------------------------------------------------ consumo de combustível
+  // relatório da Ticket Log: uma linha por placa e combustível no mês. Cada placa fica ligada ao condutor
+  // do mês (linha do tempo); carros coringa ficam numa tabela à parte.
+  let COMB = [];
+  const fcb = { mes: "", gestor: "", comb: "", cc: "", busca: "", alerta: false };
+  const numBR = v => {
+    if (typeof v === "number") return v;
+    let t = String(v == null ? "" : v).replace(/R\$|\s/g, "");
+    if (!t || t === "-" || t === "—") return null;
+    if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+    const n = Number(t); return isFinite(n) ? n : null;
+  };
+  const n0 = v => { const n = Number(v); return isFinite(n) ? n : 0; };
+  const fmtN = (v, c = 0) => v == null || !isFinite(v) ? "-" : v.toLocaleString("pt-BR", { minimumFractionDigits: c, maximumFractionDigits: c });
+  const nomeMes = m => { if (!m) return ""; const [a, b] = m.split("-"); return ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(b) - 1] + "/" + a; };
+  const ehCoringa = (r, v) => /coringa/.test(sem(r.condutores) + " " + sem(r.tipo_uso) + " " + (v ? sem(v.condutor) + " " + sem(v.tipo_uso) + " " + sem(v.status) : ""));
+  (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); $("#cb-mes-up").value = d.toISOString().slice(0, 7); })();
+
+  $("#arq-comb").addEventListener("change", async e => {
+    const arq = e.target.files[0]; e.target.value = "";
+    if (!arq) return;
+    const el = $("#cb-msg");
+    try {
+      msg(el, "Lendo " + arq.name + "…");
+      const wb = XLSX.read(await arq.arrayBuffer(), { type: "array", cellDates: false });
+      let m = null, r0 = -1;
+      for (const nome of wb.SheetNames) {
+        const t = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
+        r0 = t.slice(0, 40).findIndex(l => l.some(c => sem(c) === "placa"));
+        if (r0 >= 0) { m = t; break; }
+      }
+      if (!m) return msg(el, "Não achei a coluna Placa na planilha.", "erro");
+      // período escrito no topo do relatório (ex.: 01/10/2026 a 31/10/2026) → sugere o mês
+      const topo = m.slice(0, r0).map(l => l.join(" ")).join(" ");
+      const dt = topo.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      const datas = topo.match(/\d{2}\/\d{2}\/\d{4}/g) || [];
+      const periodo = datas.length >= 2 ? `de ${datas[0].slice(0, 5)} até ${datas[1].slice(0, 5)}` : "";
+      let mes = $("#cb-mes-up").value;
+      if (dt && `${dt[3]}-${dt[2]}` !== mes && window.confirm(`A planilha fala de ${dt[1]}/${dt[2]}/${dt[3]}. Gravar como ${nomeMes(dt[3] + "-" + dt[2])}?`)) { mes = `${dt[3]}-${dt[2]}`; $("#cb-mes-up").value = mes; }
+      if (!mes) return msg(el, "Escolha o mês da planilha.", "erro");
+      const cab = m[r0].map(sem), cab2 = (m[r0 + 1] || []).map(sem);
+      const col = teste => cab.findIndex(teste);
+      const ix = {
+        placa: col(h => h === "placa"), modelo: col(h => h === "modelo"), marca: col(h => h === "marca"), ano: col(h => h === "ano"),
+        combustivel: col(h => h.includes("combustivel")), ultima_km: col(h => h.startsWith("ultima km")), km_rodados: col(h => h.startsWith("km rodados")),
+        litros: col(h => h === "litros"), valor_litro: col(h => h.startsWith("valor medio")), km_litro: col(h => h.startsWith("km por litro")),
+        total: col(h => h.startsWith("total")),
+      };
+      const iCartao = col(h => h.startsWith("cartao"));
+      ix.limite = cab2.indexOf("limite") >= 0 ? cab2.indexOf("limite") : iCartao;
+      ix.saldo = cab2.indexOf("saldo") >= 0 ? cab2.indexOf("saldo") : (iCartao >= 0 ? iCartao + 1 : -1);
+      const faltam = ["litros", "total"].filter(k => ix[k] < 0);
+      if (faltam.length) return msg(el, "Não achei as colunas: " + faltam.join(", "), "erro");
+      const regs = [], pendentes = [];
+      m.slice(r0 + 1).forEach(l => {
+        const c0 = String(l[0] == null ? "" : l[0]);
+        const cc = sem(c0).match(/^centro de custo\s*:?\s*(.*)$/);
+        if (cc) { const nomeCc = c0.split(":").slice(1).join(":").replace(/\s+/g, " ").trim(); pendentes.forEach(r => { r.centro_custo = nomeCc; }); pendentes.length = 0; return; }
+        const placa = String(l[ix.placa] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        if (!/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa)) return;
+        const txt = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).trim() : "";
+        const num = k => ix[k] >= 0 ? numBR(l[ix[k]]) : null;
+        const r = { placa, modelo: txt("modelo"), marca: txt("marca"), ano: txt("ano"), combustivel: txt("combustivel"),
+          limite: num("limite"), saldo: num("saldo"), ultima_km: num("ultima_km"), km_rodados: num("km_rodados"), litros: num("litros"),
+          valor_litro: num("valor_litro"), km_litro: num("km_litro"), total: num("total"), centro_custo: "" };
+        Object.keys(r).forEach(k => { if (r[k] === null) r[k] = ""; });
+        regs.push(r); pendentes.push(r);
+      });
+      if (!regs.length) return msg(el, "Nenhuma placa encontrada na planilha.", "erro");
+      if (COMB.some(x => x.mes === mes) && !window.confirm(`${nomeMes(mes)} já tem consumo gravado. Substituir pelos dados desta planilha?`)) return msg(el, "");
+      msg(el, `Enviando ${regs.length} linhas de ${nomeMes(mes)}…`);
+      await api("subir_combustivel", { mes, periodo, regs });
+      fcb.mes = mes; montarFiltrosComb(); desenharComb(); desenharInicioComb();
+      const fora = COMB.filter(x => x.mes === mes && x.na_frota === "NAO").length;
+      msg(el, `✓ ${regs.length} linhas de ${nomeMes(mes)} gravadas.` + (fora ? ` ${fora} placa(s) não estão cadastradas na frota.` : ""), "ok");
+    } catch (err) { msg(el, "Erro ao subir: " + (err.message || err), "erro"); }
+  });
+
+  function montarFiltrosComb() {
+    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort().reverse();
+    if (!fcb.mes || meses.indexOf(fcb.mes) < 0) fcb.mes = meses[0] || "";
+    $("#cb-mes").innerHTML = meses.length ? meses.map(x => `<option value="${x}">${nomeMes(x)}</option>`).join("") : "<option value=''>Nenhum mês</option>";
+    $("#cb-mes").value = fcb.mes;
+    const op = (id, lista, todos) => { const v = $(id).value; $(id).innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); $(id).value = lista.indexOf(v) >= 0 ? v : ""; };
+    const doMes = COMB.filter(x => x.mes === fcb.mes);
+    op("#cb-gestor", Array.from(new Set(doMes.map(x => x.gestor_operacao).filter(Boolean))).sort(), "Todos os gestores");
+    op("#cb-comb", Array.from(new Set(doMes.map(x => x.combustivel).filter(Boolean))).sort(), "Todos os combustíveis");
+    op("#cb-cc", Array.from(new Set(doMes.map(x => x.centro_custo).filter(Boolean))).sort(), "Todos os centros de custo");
+    $("#cb-cc").value = fcb.cc;
+    fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = $("#cb-cc").value;
+  }
+  $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); });
+  $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; desenharComb(); });
+  $("#cb-comb").addEventListener("change", e => { fcb.comb = e.target.value; desenharComb(); });
+  $("#cb-cc").addEventListener("change", e => { fcb.cc = e.target.value; desenharComb(); });
+  $("#tb-cc").addEventListener("click", e => { const tr = e.target.closest("tr[data-cc]"); if (!tr) return; fcb.cc = fcb.cc === tr.dataset.cc ? "" : tr.dataset.cc; $("#cb-cc").value = fcb.cc; desenharComb(); });
+  $("#cb-busca").addEventListener("input", e => { fcb.busca = sem(e.target.value); desenharComb(); });
+  $("#cb-alerta").addEventListener("change", e => { fcb.alerta = e.target.checked; desenharComb(); });
+
+  // junta as linhas de cada placa (gasolina + etanol) e marca alerta de consumo
+  function consumoPorPlaca() {
+    const veic = new Map(VEICULOS.map(v => [v.placa, v]));
+    const mp = new Map();
+    COMB.filter(x => x.mes === fcb.mes && (!fcb.gestor || x.gestor_operacao === fcb.gestor) && (!fcb.comb || x.combustivel === fcb.comb) && (!fcb.cc || x.centro_custo === fcb.cc)).forEach(x => {
+      let p = mp.get(x.placa);
+      if (!p) { const v = veic.get(x.placa); p = { placa: x.placa, condutor: x.condutores || "", modelo: x.modelo || (v && v.modelo) || "", gestor: x.gestor_operacao || "", operacao: x.operacao || "",
+        cc: x.centro_custo || "", combs: [], km: 0, litros: 0, total: 0, limite: x.limite, saldo: x.saldo, coringa: ehCoringa(x, v), naFrota: x.na_frota !== "NAO" }; mp.set(x.placa, p); }
+      if (x.combustivel && p.combs.indexOf(x.combustivel) < 0) p.combs.push(x.combustivel);
+      p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total);
+      if (!p.cc && x.centro_custo) p.cc = x.centro_custo;
+    });
+    const lista = Array.from(mp.values());
+    lista.forEach(p => { p.kml = p.litros > 0 && p.km > 0 ? p.km / p.litros : null; p.rsl = p.litros > 0 ? p.total / p.litros : null; });
+    // referência: mediana do km/L do mesmo modelo (precisa de 3 carros ou mais)
+    const porModelo = {};
+    lista.forEach(p => { if (p.kml) (porModelo[sem(p.modelo)] = porModelo[sem(p.modelo)] || []).push(p.kml); });
+    lista.forEach(p => {
+      const ks = (porModelo[sem(p.modelo)] || []).slice().sort((a, b) => a - b);
+      p.ref = ks.length >= 3 ? ks[Math.floor(ks.length / 2)] : null;
+      p.alerta = p.litros > 0 && p.km <= 0 ? "Abasteceu sem km rodado" : p.ref && p.kml && p.kml < p.ref * 0.75 ? `Km/L abaixo do normal do ${p.modelo} (${fmtN(p.ref, 1)})` : "";
+    });
+    return lista.filter(p => (!fcb.busca || sem([p.placa, p.condutor, p.modelo, p.gestor, p.cc].join(" ")).includes(fcb.busca)) && (!fcb.alerta || p.alerta));
+  }
+  const CAB_CB = c => `<tr><th>${c}</th><th>Placa</th><th>Modelo</th><th>Combustível</th><th>Gestor operação</th><th class="num">Km rodados</th><th class="num">Litros</th><th class="num">R$/litro</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">Saldo cartão</th><th>Centro de custo</th><th>Alerta</th></tr>`;
+  function linhasComb(lista, vazio) {
+    if (!lista.length) return `<tr><td colspan="13" class="info">${vazio}</td></tr>`;
+    const s = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
+    return lista.map(p => `<tr class="clica${p.alerta ? " tem-alerta" : ""}" data-placa="${esc(p.placa)}"><td class="cond">${esc(p.condutor || "Sem condutor na linha do tempo")}</td><td><b>${esc(p.placa)}</b>${p.naFrota ? "" : ' <span class="tag">fora da frota</span>'}</td><td>${esc(p.modelo)}</td><td>${esc(p.combs.join(" + "))}</td><td>${esc(p.gestor)}</td>
+      <td class="num">${fmtN(p.km)}</td><td class="num">${fmtN(p.litros, 2)}</td><td class="num">${fmtN(p.rsl, 2)}</td><td class="num${p.alerta ? " alerta-km" : ""}">${fmtN(p.kml, 2)}</td><td class="num">${fmtN(p.total, 2)}</td><td class="num">${p.saldo === "" || p.saldo == null ? "-" : fmtN(n0(p.saldo), 2)}</td><td>${esc(p.cc)}</td><td class="info">${esc(p.alerta)}</td></tr>`).join("")
+      + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "carro" : "carros"})</b></td><td class="num"><b>${fmtN(s.km)}</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.t / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.km / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.t, 2)}</b></td><td colspan="3"></td></tr>`;
+  }
+  function desenharComb() {
+    $("#cb-cab").innerHTML = CAB_CB("Condutor"); $("#cb-cab2").innerHTML = CAB_CB("Condutor / uso no mês");
+    if (!COMB.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="13" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Escolha o mês e clique em Subir consumo." : ""}</td></tr>`; $("#tb-comb-cor").innerHTML = ""; $("#cb-info").textContent = ""; return; }
+    const lista = consumoPorPlaca();
+    const cond = lista.filter(p => !p.coringa).sort((a, b) => (a.condutor ? 0 : 1) - (b.condutor ? 0 : 1) || sem(a.condutor).localeCompare(sem(b.condutor)) || a.placa.localeCompare(b.placa));
+    const cor = lista.filter(p => p.coringa).sort((a, b) => a.placa.localeCompare(b.placa));
+    const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
+    const k = (t, v, cor2) => `<div class="kpi"${cor2 ? ` style="border-left-color:${cor2}"` : ""}><small>${t}</small><b>${v}</b></div>`;
+    $("#cb-kpis").innerHTML = k("Gasto no mês", "R$ " + fmtN(tot.t, 2)) + k("Litros", fmtN(tot.l)) + k("Km rodados", fmtN(tot.km)) + k("Km/L médio", fmtN(tot.l ? tot.km / tot.l : null, 2))
+      + k("Carros com condutor", cond.length) + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", lista.filter(p => p.alerta).length, "#b91c1c");
+    $("#tb-comb").innerHTML = linhasComb(cond, "Nenhum carro com esse filtro.");
+    $("#tb-comb-cor").innerHTML = linhasComb(cor, "Nenhum carro coringa nesse mês.");
+    $("#cb-cor-info").textContent = cor.length ? `${cor.length} · R$ ${fmtN(cor.reduce((a, p) => a + p.total, 0), 2)}` : "";
+    const per = (COMB.find(x => x.mes === fcb.mes && x.periodo) || {}).periodo;
+    $("#cb-info").textContent = `${nomeMes(fcb.mes)}${per ? " (" + per + ")" : ""} · ${lista.length} carros`;
+    // gasto por centro de custo (respeita mês, gestor e combustível)
+    const g = {};
+    COMB.filter(x => x.mes === fcb.mes && (!fcb.gestor || x.gestor_operacao === fcb.gestor) && (!fcb.comb || x.combustivel === fcb.comb)).forEach(x => {
+      const c = x.centro_custo || "Sem centro de custo";
+      const o = g[c] = g[c] || { placas: new Set(), l: 0, km: 0, t: 0 };
+      o.placas.add(x.placa); o.l += n0(x.litros); o.km += n0(x.km_rodados); o.t += n0(x.total);
+    });
+    const ccs = Object.keys(g).sort((a, b) => g[b].t - g[a].t), totG = ccs.reduce((a, c) => a + g[c].t, 0);
+    $("#tb-cc").innerHTML = ccs.map(c => `<tr class="clica${fcb.cc === c ? " cc-on" : ""}" data-cc="${esc(c === "Sem centro de custo" ? "" : c)}"><td><b>${esc(c)}</b></td><td class="num">${g[c].placas.size}</td><td class="num">${fmtN(g[c].l, 2)}</td><td class="num">${fmtN(g[c].km)}</td><td class="num">${fmtN(g[c].l ? g[c].km / g[c].l : null, 2)}</td><td class="num"><b>${fmtN(g[c].t, 2)}</b></td><td class="num">${totG ? fmtN(g[c].t / totG * 100, 1) + "%" : "-"}</td></tr>`).join("") || '<tr><td colspan="7" class="info">Sem dados.</td></tr>';
+  }
+  ["#tb-comb", "#tb-comb-cor"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
+
+  $("#bt-comb-exp").addEventListener("click", () => {
+    const lista = consumoPorPlaca();
+    if (!lista.length) return msg($("#cb-msg"), "Nada para baixar com esse filtro.", "erro");
+    const linha = p => ({ "Mês": nomeMes(fcb.mes), "Condutor": p.condutor, "Placa": p.placa, "Modelo": p.modelo, "Combustível": p.combs.join(" + "), "Gestor operação": p.gestor, "Operação": p.operacao,
+      "Km rodados": p.km, "Litros": Math.round(p.litros * 100) / 100, "R$/litro": p.rsl == null ? null : Math.round(p.rsl * 100) / 100, "Km/L": p.kml == null ? null : Math.round(p.kml * 100) / 100,
+      "Total R$": Math.round(p.total * 100) / 100, "Centro de custo": p.cc, "Alerta": p.alerta });
+    const wb = XLSX.utils.book_new();
+    [["Por condutor", lista.filter(p => !p.coringa)], ["Coringa", lista.filter(p => p.coringa)]].forEach(([nome, l]) => {
+      const ws = XLSX.utils.json_to_sheet(l.length ? l.map(linha) : [{ "Placa": "" }]);
+      ws["!cols"] = Object.keys(linha(lista[0])).map(k2 => ({ wch: Math.max(12, k2.length + 4) }));
+      XLSX.utils.book_append_sheet(wb, ws, nome);
+    });
+    const det = COMB.filter(x => x.mes === fcb.mes).map(x => ({ "Mês": nomeMes(x.mes), "Placa": x.placa, "Condutores no mês": x.condutores, "Modelo": x.modelo, "Combustível": x.combustivel,
+      "Km rodados": numBR(x.km_rodados), "Litros": numBR(x.litros), "R$/litro": numBR(x.valor_litro), "Km/L": numBR(x.km_litro), "Total R$": numBR(x.total), "Limite": numBR(x.limite), "Saldo": numBR(x.saldo), "Centro de custo": x.centro_custo }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), "Detalhe por combustível");
+    XLSX.writeFile(wb, `Combustivel_${fcb.mes}.xlsx`);
+  });
+
+  // início: cartões "Limite disponível" e "Gasto no mês" (último mês enviado; filtra por centro de custo)
+  function desenharInicioComb() {
+    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort();
+    $("#ini-comb").hidden = !meses.length;
+    if (!meses.length) return;
+    const mes = meses[meses.length - 1];
+    const doMes = COMB.filter(x => x.mes === mes);
+    const sel = $("#ic-cc"), v0 = sel.value;
+    const ccs = Array.from(new Set(doMes.map(x => x.centro_custo).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">Todos os centros de custo</option>' + ccs.map(c => `<option>${esc(c)}</option>`).join("");
+    sel.value = ccs.indexOf(v0) >= 0 ? v0 : "";
+    const rs = doMes.filter(x => !sel.value || x.centro_custo === sel.value);
+    const porPlaca = new Map();
+    rs.forEach(x => { if (!porPlaca.has(x.placa) && x.saldo !== "") porPlaca.set(x.placa, x); });
+    const saldo = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.saldo), 0);
+    const limite = Array.from(porPlaca.values()).reduce((a, x) => a + n0(x.limite), 0);
+    const gasto = rs.reduce((a, x) => a + n0(x.total), 0), litros = rs.reduce((a, x) => a + n0(x.litros), 0);
+    const per = (doMes.find(x => x.periodo) || {}).periodo;
+    $("#ic-saldo").textContent = "R$ " + fmtN(saldo, 2);
+    $("#ic-limite").textContent = limite ? `de R$ ${fmtN(limite, 2)} de limite · ${porPlaca.size} ${porPlaca.size === 1 ? "cartão" : "cartões"}` : "";
+    $("#ic-periodo").textContent = per || nomeMes(mes);
+    $("#ic-gasto").textContent = "R$ " + fmtN(gasto, 2);
+    $("#ic-det").textContent = `${fmtN(litros)} litros · ${new Set(rs.map(x => x.placa)).size} carro(s)` + (sel.value ? "" : ` · ${ccs.length} centros de custo`);
+  }
+  $("#ic-cc").addEventListener("click", e => e.stopPropagation());
+  $("#ic-cc").addEventListener("change", () => desenharInicioComb());
+  $$("#ini-comb [data-ir]").forEach(el => el.addEventListener("click", () => {
+    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort();
+    fcb.mes = meses[meses.length - 1] || ""; fcb.cc = $("#ic-cc").value;
+    montarFiltrosComb(); $("#cb-cc").value = fcb.cc; fcb.cc = $("#cb-cc").value; desenharComb(); irPara("combustivel");
+  }));
 
   // ------------------------------------------------------------------ exportar Excel
   $("#bt-exportar").addEventListener("click", async () => {
