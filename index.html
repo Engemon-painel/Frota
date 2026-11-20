@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=15">
+<link rel="stylesheet" href="estilo.css?v=16">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -69,6 +69,12 @@
       </div>
     </aside>
     <main>
+      <div class="barra-equipe" id="barra-equipe"><b>👥 Equipe:</b>
+        <select id="eq-ger" title="Gerente"><option value="">Todos os gerentes</option></select>
+        <select id="eq-coord" title="Coordenador"><option value="">Todos os coordenadores</option></select>
+        <select id="eq-sup" title="Supervisor"><option value="">Todos os supervisores</option></select>
+        <button class="link" id="eq-limpar" hidden>limpar</button><span class="info" id="eq-info"></span>
+      </div>
       <!-- INÍCIO -->
       <div id="aba-inicio" class="aba-conteudo">
         <div class="linha-titulo"><h1>Início</h1><span class="info" id="ini-data"></span></div>
@@ -282,6 +288,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>
