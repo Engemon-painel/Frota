@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=14">
+<link rel="stylesheet" href="estilo.css?v=15">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -186,14 +186,14 @@
         <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Centro de custo</th><th class="num">Carros</th><th class="num">Litros</th><th class="num">Km rodados</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">% do gasto</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
         <div id="cb-cartoes-caixa" hidden>
           <h2 class="sub-titulo">Saldo dos cartões por técnico <span class="info" id="cb-cartoes-info"></span></h2>
-          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Condutor (base de veículos)</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
+          <div class="tabela-caixa cc-caixa"><table class="tabela tab-cartoes"><thead><tr><th>Condutor (base de veículos)</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
           <h2 class="sub-titulo">Cartões coringa <span class="info" id="cb-cartoes-cor-info"></span></h2>
-          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Condutor / responsável</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes-cor"></tbody></table></div>
+          <div class="tabela-caixa cc-caixa"><table class="tabela tab-cartoes"><thead><tr><th>Condutor / responsável</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes-cor"></tbody></table></div>
         </div>
         <h2 class="sub-titulo">Por condutor</h2>
-        <div class="tabela-caixa"><table class="tabela"><thead id="cb-cab"></thead><tbody id="tb-comb"></tbody></table></div>
+        <div class="tabela-caixa"><table class="tabela tab-comb"><thead id="cb-cab"></thead><tbody id="tb-comb"></tbody></table></div>
         <h2 class="sub-titulo">Carros coringa <span class="info" id="cb-cor-info"></span></h2>
-        <div class="tabela-caixa"><table class="tabela"><thead id="cb-cab2"></thead><tbody id="tb-comb-cor"></tbody></table></div>
+        <div class="tabela-caixa"><table class="tabela tab-comb"><thead id="cb-cab2"></thead><tbody id="tb-comb-cor"></tbody></table></div>
       </div>
 
       <!-- OCORRÊNCIAS -->
