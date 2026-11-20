@@ -751,7 +751,7 @@
       if (!p) { const v = veic.get(x.placa); const dn = dono(x.placa, x); p = { placa: x.placa, condutor: x.condutores || dn.condutor || "", modelo: x.modelo || (v && v.modelo) || "", gestor: dn.gestor, operacao: dn.contrato,
         cc: x.centro_custo || "", combs: [], km: 0, litros: 0, total: 0, limite: x.limite, saldo: x.saldo, coringa: ehCoringa(x, v), naFrota: x.na_frota !== "NAO" }; mp.set(x.placa, p); }
       if (x.combustivel && p.combs.indexOf(x.combustivel) < 0) p.combs.push(x.combustivel);
-      p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total);
+      p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total); p.odo = Math.max(p.odo || 0, n0(x.ultima_km));
       if (!p.cc && x.centro_custo) p.cc = x.centro_custo;
     });
     const lista = Array.from(mp.values());
@@ -774,20 +774,72 @@
       <td class="num">${fmtN(p.km)}</td><td class="num">${fmtN(p.litros, 2)}</td><td class="num">${fmtN(p.rsl, 2)}</td><td class="num${p.alerta ? " alerta-km" : ""}">${fmtN(p.kml, 2)}</td><td class="num">${fmtN(p.total, 2)}</td><td class="num">${p.saldo === "" || p.saldo == null ? "-" : fmtN(n0(p.saldo), 2)}</td><td>${esc(p.cc)}</td><td class="info">${esc(p.alerta)}</td></tr>`).join("")
       + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "carro" : "carros"})</b></td><td class="num"><b>${fmtN(s.km)}</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.t / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.km / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.t, 2)}</b></td><td colspan="3"></td></tr>`;
   }
+  // junta, por placa, o consumo do mês (relatório) e o cartão (Extrato Simplificado)
+  function linhasUnificadas() {
+    const lista = COMB.length ? consumoPorPlaca() : [];
+    const porPlaca = new Map(lista.map(p => [p.placa, Object.assign({ temConsumo: true }, p)]));
+    const veic = new Map(VEICULOS.map(v => [v.placa, v]));
+    CARTOES.filter(c => bateCC(c.centro_custo, fcb.cc) && bateDono(c.placa, null, fcb.gestor, fcb.contrato)).forEach(c => {
+      const placa = String(c.placa || "").toUpperCase();
+      let p = porPlaca.get(placa);
+      if (!p) {
+        if (fcb.comb || fcb.alerta) return;   // filtro de combustível/alerta: só quem tem consumo
+        const d = dono(placa);
+        if (fcb.busca && !sem([placa, c.responsavel, c.centro_custo, c.modelo, d.condutor].join(" ")).includes(fcb.busca)) return;
+        p = { placa, condutor: d.condutor, modelo: c.modelo, gestor: d.gestor, operacao: d.contrato, cc: "", combs: [], km: 0, litros: 0, total: 0, kml: null, rsl: null, alerta: "",
+          coringa: ehCoringa({ placa, modelo: c.modelo }, veic.get(placa)), naFrota: !!d.v, temConsumo: false };
+        porPlaca.set(placa, p);
+      }
+      p.cartao = c; p.limiteC = n0(c.limite_atual); p.utilC = n0(c.utilizado); p.saldoC = n0(c.saldo);
+      p.pct = p.limiteC > 0 ? p.utilC / p.limiteC * 100 : 0;
+      if (!p.modelo) p.modelo = c.modelo;
+    });
+    const todas = Array.from(porPlaca.values());
+    const cond = todas.filter(p => !p.coringa).sort((a, b) => (a.condutor ? 0 : 1) - (b.condutor ? 0 : 1) || sem(a.condutor).localeCompare(sem(b.condutor)) || a.placa.localeCompare(b.placa));
+    const cor = todas.filter(p => p.coringa).sort((a, b) => a.placa.localeCompare(b.placa));
+    return { lista, cond, cor };
+  }
+  const CAB_UNI = () => `<tr><th>Condutor</th><th>Placa</th><th>Modelo · combustível</th><th>Gestor · contrato</th><th>Centro de custo</th>
+    <th class="num" title="Km rodados no mês (embaixo: odômetro)">Km</th><th class="num">Litros</th><th class="num">R$/L</th><th class="num">Km/L</th><th class="num">Consumo</th>
+    <th class="num" title="Utilizado no cartão (embaixo: limite)">Cartão</th><th class="num" title="Saldo do cartão">Saldo</th><th class="num">% uso</th></tr>`;
+  const NCOL = 13;
+  function linhasUni(l, vazio) {
+    if (!l.length) return `<tr><td colspan="${NCOL}" class="info">${vazio}</td></tr>`;
+    const dif = (a, b) => a && b && sem(a) !== sem(b);
+    const s = l.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total, li: a.li + (p.limiteC || 0), u: a.u + (p.utilC || 0), sa: a.sa + (p.saldoC || 0) }), { km: 0, l: 0, t: 0, li: 0, u: 0, sa: 0 });
+    return l.map(p => {
+      const c = p.cartao || {};
+      const resp = c.responsavel && dif(p.condutor, c.responsavel) ? `<small class="resp">Ticket Log: ${esc(c.responsavel)}</small>` : "";
+      const nome = p.condutor || c.responsavel || (p.coringa ? "Cartão coringa" : "Sem condutor na base");
+      const ccC = c.centro_custo || "", ccR = p.cc || "";
+      const ccTxt = dif(ccR, ccC) ? `${esc(ccR)}<small class="resp">no extrato: ${esc(ccC)}</small>` : esc(ccR || ccC);
+      const pct = p.cartao ? p.pct : null;
+      return `<tr class="clica${p.alerta || (pct != null && pct >= 90) ? " tem-alerta" : ""}" data-placa="${esc(p.placa)}"${c.cartao ? ` title="Cartão ${esc(c.cartao)}"` : ""}>
+        <td class="cond">${esc(nome)}${resp}${p.naFrota === false ? '<small class="resp">fora da base de veículos</small>' : ""}${p.alerta ? `<small class="resp alerta-txt">⚠ ${esc(p.alerta)}</small>` : ""}</td>
+        <td><b>${esc(p.placa)}</b></td><td>${esc(p.modelo)}${p.combs.length ? `<small class="resp">${esc(p.combs.join(" + "))}</small>` : ""}</td>
+        <td>${esc(p.gestor)}${p.operacao ? `<small class="resp">${esc(p.operacao)}</small>` : ""}</td><td>${ccTxt}</td>
+        <td class="num">${p.temConsumo ? fmtN(p.km) : "—"}${p.odo ? `<small class="resp">odôm. ${fmtN(p.odo)}</small>` : ""}</td><td class="num">${p.temConsumo ? fmtN(p.litros, 2) : "—"}</td><td class="num">${fmtN(p.rsl, 2)}</td>
+        <td class="num${p.alerta ? " alerta-km" : ""}">${fmtN(p.kml, 2)}</td><td class="num">${p.temConsumo ? fmtN(p.total, 2) : "—"}</td>
+        <td class="num">${p.cartao ? `${fmtN(p.utilC, 2)}<small class="resp">de ${fmtN(p.limiteC, 2)}</small>` : "—"}</td><td class="num"><b>${p.cartao ? fmtN(p.saldoC, 2) : "—"}</b></td>
+        <td class="num">${pct == null ? "—" : `<span class="uso"><i style="width:${Math.min(100, pct)}%;background:${pct >= 90 ? "#b91c1c" : pct >= 70 ? "#ea580c" : "#0e7c86"}"></i></span> ${fmtN(pct, 0)}%`}</td></tr>`;
+    }).join("") + `<tr class="linha-total"><td colspan="5"><b>Total (${l.length} ${l.length === 1 ? "carro" : "carros"})</b></td><td class="num"><b>${fmtN(s.km)}</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td>
+      <td class="num"><b>${fmtN(s.l ? s.t / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.l ? s.km / s.l : null, 2)}</b></td><td class="num"><b>${fmtN(s.t, 2)}</b></td>
+      <td class="num"><b>${fmtN(s.u, 2)}</b><small class="resp">de ${fmtN(s.li, 2)}</small></td><td class="num"><b>${fmtN(s.sa, 2)}</b></td><td class="num"><b>${s.li ? fmtN(s.u / s.li * 100, 0) + "%" : "—"}</b></td></tr>`;
+  }
   function desenharComb() {
-    $("#cb-cab").innerHTML = CAB_CB("Condutor"); $("#cb-cab2").innerHTML = CAB_CB("Condutor / uso no mês");
-    desenharCartoes();
-    if (!COMB.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="13" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Escolha o mês e clique em Subir consumo." : ""}</td></tr>`; $("#tb-comb-cor").innerHTML = ""; $("#cb-info").textContent = ""; return; }
-    const lista = consumoPorPlaca();
-    const cond = lista.filter(p => !p.coringa).sort((a, b) => (a.condutor ? 0 : 1) - (b.condutor ? 0 : 1) || sem(a.condutor).localeCompare(sem(b.condutor)) || a.placa.localeCompare(b.placa));
-    const cor = lista.filter(p => p.coringa).sort((a, b) => a.placa.localeCompare(b.placa));
+    $("#cb-cab").innerHTML = CAB_UNI();
+    if (!COMB.length && !CARTOES.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="${NCOL}" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Suba o relatório de consumo e o Extrato Simplificado." : ""}</td></tr>`; $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = ""; return; }
+    const { lista, cond, cor } = linhasUnificadas();
     const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
     const k = (t, v, cor2) => `<div class="kpi"${cor2 ? ` style="border-left-color:${cor2}"` : ""}><small>${t}</small><b>${v}</b></div>`;
     $("#cb-kpis").innerHTML = k("Gasto no mês", "R$ " + fmtN(tot.t, 2)) + k("Litros", fmtN(tot.l)) + k("Km rodados", fmtN(tot.km)) + k("Km/L médio", fmtN(tot.l ? tot.km / tot.l : null, 2))
-      + k("Carros com condutor", cond.length) + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", lista.filter(p => p.alerta).length, "#b91c1c");
-    $("#tb-comb").innerHTML = linhasComb(cond, "Nenhum carro com esse filtro.");
-    $("#tb-comb-cor").innerHTML = linhasComb(cor, "Nenhum carro coringa nesse mês.");
-    $("#cb-cor-info").textContent = cor.length ? `${cor.length} · R$ ${fmtN(cor.reduce((a, p) => a + p.total, 0), 2)}` : "";
+      + k("Carros com condutor", cond.length) + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", cond.concat(cor).filter(p => p.alerta || (p.cartao && p.pct >= 90)).length, "#b91c1c");
+    // uma tabela só: condutores e, no fim, a seção dos coringas
+    $("#tb-comb").innerHTML = linhasUni(cond, "Nenhum carro com esse filtro.")
+      + (cor.length ? `<tr class="secao"><td colspan="${NCOL}">Coringa · ${cor.length} ${cor.length === 1 ? "cartão" : "cartões"}</td></tr>` + linhasUni(cor, "") : "");
+    $("#cb-uni-info").textContent = `${cond.length} carros` + (CARTOES.length ? ` · extrato de ${CARTOES[0].data_ref || "-"}` : "");
+    $("#cb-cor-info").textContent = cor.length ? `· coringa: ${cor.length} · consumo R$ ${fmtN(cor.reduce((a, p) => a + p.total, 0), 2)} · saldo R$ ${fmtN(cor.reduce((a, p) => a + (p.saldoC || 0), 0), 2)}` : "";
+    if (!COMB.length) { $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = '<tr><td colspan="7" class="info">Suba o relatório de consumo para ver o gasto por centro de custo.</td></tr>'; return; }
     const per = (COMB.find(x => x.mes === fcb.mes && x.periodo) || {}).periodo;
     $("#cb-info").textContent = `${nomeMes(fcb.mes)}${per ? " (" + per + ")" : ""} · ${lista.length} carros`;
     // gasto por centro de custo (respeita mês, gestor e combustível)
@@ -800,16 +852,20 @@
     const ccs = Object.keys(g).sort((a, b) => g[b].t - g[a].t), totG = ccs.reduce((a, c) => a + g[c].t, 0);
     $("#tb-cc").innerHTML = ccs.map(c => `<tr class="clica${fcb.cc && bateCC(c, fcb.cc) ? " cc-on" : ""}" data-cc="${esc(c === "Sem centro de custo" ? "" : c)}"><td><b>${esc(c)}</b></td><td class="num">${g[c].placas.size}</td><td class="num">${fmtN(g[c].l, 2)}</td><td class="num">${fmtN(g[c].km)}</td><td class="num">${fmtN(g[c].l ? g[c].km / g[c].l : null, 2)}</td><td class="num"><b>${fmtN(g[c].t, 2)}</b></td><td class="num">${totG ? fmtN(g[c].t / totG * 100, 1) + "%" : "-"}</td></tr>`).join("") || '<tr><td colspan="7" class="info">Sem dados.</td></tr>';
   }
-  ["#tb-comb", "#tb-comb-cor", "#tb-cartoes", "#tb-cartoes-cor"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
+  ["#tb-comb"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
 
   $("#bt-comb-exp").addEventListener("click", () => {
-    const lista = consumoPorPlaca();
+    const { cond, cor } = linhasUnificadas();
+    const lista = cond.concat(cor);
     if (!lista.length) return msg($("#cb-msg"), "Nada para baixar com esse filtro.", "erro");
-    const linha = p => ({ "Mês": nomeMes(fcb.mes), "Condutor": p.condutor, "Placa": p.placa, "Modelo": p.modelo, "Combustível": p.combs.join(" + "), "Gestor operação": p.gestor, "Operação": p.operacao,
-      "Km rodados": p.km, "Litros": Math.round(p.litros * 100) / 100, "R$/litro": p.rsl == null ? null : Math.round(p.rsl * 100) / 100, "Km/L": p.kml == null ? null : Math.round(p.kml * 100) / 100,
-      "Total R$": Math.round(p.total * 100) / 100, "Centro de custo": p.cc, "Alerta": p.alerta });
+    const r2 = v => v == null ? null : Math.round(v * 100) / 100;
+    const linha = p => { const c = p.cartao || {}; return { "Mês": nomeMes(fcb.mes), "Condutor (base)": p.condutor, "Responsável Ticket Log": c.responsavel || "", "Placa": p.placa, "Modelo": p.modelo,
+      "Combustível": p.combs.join(" + "), "Gestor operação": p.gestor, "Contrato": p.operacao, "Centro de custo (consumo)": p.cc, "Centro de custo (extrato)": c.centro_custo || "",
+      "Odômetro (última km)": p.odo || null, "Km rodados": p.temConsumo ? p.km : null, "Litros": p.temConsumo ? r2(p.litros) : null, "R$/litro": r2(p.rsl), "Km/L": r2(p.kml), "Consumo R$": p.temConsumo ? r2(p.total) : null,
+      "Cartão": c.cartao || "", "Limite cartão": p.cartao ? p.limiteC : null, "Utilizado cartão": p.cartao ? p.utilC : null, "Saldo cartão": p.cartao ? p.saldoC : null,
+      "% usado": p.cartao ? r2(p.pct) : null, "Alerta": p.alerta }; };
     const wb = XLSX.utils.book_new();
-    [["Por condutor", lista.filter(p => !p.coringa)], ["Coringa", lista.filter(p => p.coringa)]].forEach(([nome, l]) => {
+    [["Por condutor", cond], ["Coringa", cor]].forEach(([nome, l]) => {
       const ws = XLSX.utils.json_to_sheet(l.length ? l.map(linha) : [{ "Placa": "" }]);
       ws["!cols"] = Object.keys(linha(lista[0])).map(k2 => ({ wch: Math.max(12, k2.length + 4) }));
       XLSX.utils.book_append_sheet(wb, ws, nome);
@@ -817,7 +873,7 @@
     const det = COMB.filter(x => x.mes === fcb.mes).map(x => ({ "Mês": nomeMes(x.mes), "Placa": x.placa, "Condutores no mês": x.condutores, "Modelo": x.modelo, "Combustível": x.combustivel,
       "Km rodados": numBR(x.km_rodados), "Litros": numBR(x.litros), "R$/litro": numBR(x.valor_litro), "Km/L": numBR(x.km_litro), "Total R$": numBR(x.total), "Limite": numBR(x.limite), "Saldo": numBR(x.saldo), "Centro de custo": x.centro_custo }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), "Detalhe por combustível");
-    XLSX.writeFile(wb, `Combustivel_${fcb.mes}.xlsx`);
+    XLSX.writeFile(wb, `Combustivel_${fcb.mes || "cartoes"}.xlsx`);
   });
 
   // liga a placa à base de veículos: condutor, gestor operação e contrato (operação) vêm do cadastro do carro
@@ -950,30 +1006,7 @@
     msg(el, `✓ Extrato de ${res.data_ref} gravado: saldo contratual R$ ${fmtN(res.saldo_contratual, 2)}, consumido no período R$ ${fmtN(res.consumido_compras, 2)}, ${cartoes.length} cartões (compras somadas R$ ${fmtN(soma, 2)}).`, "ok");
   }
 
-  // tabela de saldo dos cartões (último extrato) na tela de combustível
-  function desenharCartoes() {
-    const caixa = $("#cb-cartoes-caixa");
-    if (!CARTOES.length) { caixa.hidden = true; return; }
-    caixa.hidden = false;
-    const veic = new Map(VEICULOS.map(v => [v.placa, v]));
-    const ls = CARTOES.filter(c => bateCC(c.centro_custo, fcb.cc) && bateDono(c.placa, null, fcb.gestor, fcb.contrato)
-      && (!fcb.busca || sem([c.cartao, c.placa, c.responsavel, c.centro_custo, c.modelo, dono(c.placa).condutor].join(" ")).includes(fcb.busca)))
-      .map(c => { const d = dono(c.placa); return Object.assign({}, c, { condutor: d.condutor, gestor: d.gestor, contrato: d.contrato, naBase: !!d.v }); })
-      .map(c => Object.assign({}, c, { pct: n0(c.limite_atual) > 0 ? n0(c.utilizado) / n0(c.limite_atual) * 100 : 0 })).sort((a, b) => b.pct - a.pct);
-    const linhasCartoes = (lista, vazio) => {
-      if (!lista.length) return `<tr><td colspan="9" class="info">${vazio}</td></tr>`;
-      const s = lista.reduce((a, c) => ({ l: a.l + n0(c.limite_atual), u: a.u + n0(c.utilizado), s: a.s + n0(c.saldo) }), { l: 0, u: 0, s: 0 });
-      return lista.map(c => `<tr class="clica${c.pct >= 90 ? " tem-alerta" : ""}" data-placa="${esc(c.placa)}" title="Cartão ${esc(c.cartao)} · responsável na Ticket Log: ${esc(c.responsavel)}"><td class="cond">${esc(c.condutor || c.responsavel)}${c.naBase ? (c.condutor && sem(c.condutor) !== sem(c.responsavel) && c.responsavel ? `<small class="resp">Ticket Log: ${esc(c.responsavel)}</small>` : "") : '<small class="resp">placa fora da base de veículos</small>'}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.gestor)}</td><td>${esc(c.contrato)}</td><td>${esc(c.centro_custo)}</td>
-      <td class="num">${fmtN(n0(c.limite_atual), 2)}</td><td class="num">${fmtN(n0(c.utilizado), 2)}</td><td class="num"><b>${fmtN(n0(c.saldo), 2)}</b></td>
-      <td class="num"><span class="uso"><i style="width:${Math.min(100, c.pct)}%;background:${c.pct >= 90 ? "#b91c1c" : c.pct >= 70 ? "#ea580c" : "#0e7c86"}"></i></span> ${fmtN(c.pct, 0)}%</td></tr>`).join("")
-      + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "cartão" : "cartões"})</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.u, 2)}</b></td><td class="num"><b>${fmtN(s.s, 2)}</b></td><td class="num"><b>${s.l ? fmtN(s.u / s.l * 100, 0) + "%" : "-"}</b></td></tr>`;
-    };
-    const cor = ls.filter(c => ehCoringa({ placa: c.placa, modelo: c.modelo }, veic.get(c.placa))), tec = ls.filter(c => cor.indexOf(c) < 0);
-    $("#cb-cartoes-info").textContent = `extrato de ${CARTOES[0].data_ref || "-"} · ${tec.length} cartões`;
-    $("#cb-cartoes-cor-info").textContent = `${cor.length} cartões`;
-    $("#tb-cartoes").innerHTML = linhasCartoes(tec, "Nenhum cartão com esse filtro.");
-    $("#tb-cartoes-cor").innerHTML = linhasCartoes(cor, "Nenhum cartão coringa com esse filtro.");
-  }
+
 
   // início: cartões "Limite disponível" e "Gasto no mês" (mês atual; filtra por centro de custo)
   function desenharInicioComb() {
@@ -992,7 +1025,7 @@
     const g = $("#ic-gestor").value, ct = $("#ic-contrato").value;
     const filtroIni = x => bateCC(x.centro_custo, cc) && bateDono(x.placa, x, g, ct);
     const rs = doMes.filter(filtroIni);
-    const litros = rs.reduce((a, x) => a + n0(x.litros), 0);
+    const litros = rs.reduce((a, x) => a + n0(x.litros), 0), kmIni = rs.reduce((a, x) => a + n0(x.km_rodados), 0);
     const ca = CARTOES.filter(filtroIni);
     const per = (doMes.find(x => x.periodo) || {}).periodo;
     let saldo, sub, gasto, periodo, det;
@@ -1002,7 +1035,7 @@
       sub = `${fmtN(100 - n0(ext.pct_consumido), 2)}% disponível${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""}`;
       gasto = n0(ext.consumido_compras);
       periodo = `período atual${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""} · extrato de ${ext.data_ref}`;
-      det = `${ca.length} cartões` + (litros ? ` · ${fmtN(litros)} litros no relatório de ${nomeMes(mes)}` : "") + ` · ${ccs.length} centros de custo`;
+      det = `${ca.length} cartões` + (litros ? ` · ${fmtN(litros)} litros · ${fmtN(kmIni)} km em ${nomeMes(mes)}` : "") + ` · ${ccs.length} centros de custo`;
     } else if (ca.length) {
       // um centro de custo (ou login de equipe): soma dos cartões do extrato
       saldo = ca.reduce((a, x) => a + n0(x.saldo), 0);
@@ -1010,7 +1043,7 @@
       sub = `de R$ ${fmtN(lim, 2)} de limite · ${ca.length} ${ca.length === 1 ? "cartão" : "cartões"}`;
       gasto = ca.reduce((a, x) => a + n0(x.utilizado), 0);
       periodo = `período atual · extrato de ${ca[0].data_ref || "-"}`;
-      det = (litros ? `${fmtN(litros)} litros · ` : "") + `${new Set(ca.map(x => x.placa)).size} carro(s)`;
+      det = (litros ? `${fmtN(litros)} litros · ${fmtN(kmIni)} km · ` : "") + `${new Set(ca.map(x => x.placa)).size} carro(s)`;
     } else {
       // sem extrato: usa o relatório de consumo do mês
       const porPlaca = new Map();
@@ -1020,7 +1053,7 @@
       sub = lim ? `de R$ ${fmtN(lim, 2)} de limite · ${porPlaca.size} ${porPlaca.size === 1 ? "cartão" : "cartões"} (suba o Extrato Simplificado para o saldo do contrato)` : "";
       gasto = rs.reduce((a, x) => a + n0(x.total), 0);
       periodo = doMes.length ? (per ? per + " · " + nomeMes(mes) : nomeMes(mes)) : "Ainda não subiu o consumo de " + nomeMes(mes);
-      det = `${fmtN(litros)} litros · ${new Set(rs.map(x => x.placa)).size} carro(s)`;
+      det = `${fmtN(litros)} litros · ${fmtN(kmIni)} km · ${new Set(rs.map(x => x.placa)).size} carro(s)`;
     }
     $("#ic-saldo").textContent = "R$ " + fmtN(saldo, 2);
     $("#ic-limite").textContent = sub;
