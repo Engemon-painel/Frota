@@ -551,10 +551,18 @@
   const ehCoringa = (r, v) => /^COR\d{4}$/.test(String(r.placa || "")) || /coringa/.test(sem(r.condutores) + " " + sem(r.modelo) + " " + sem(r.tipo_uso) + " " + (v ? sem(v.condutor) + " " + sem(v.modelo) + " " + sem(v.tipo_uso) + " " + sem(v.status) : ""));
   (() => { const d = new Date(); $("#cb-mes-up").value = d.toISOString().slice(0, 7); })();
 
+  // pode escolher os dois arquivos de uma vez (relatório de consumo + Extrato Simplificado): cada um tem a sua mensagem
   $("#arq-comb").addEventListener("change", async e => {
-    const arq = e.target.files[0]; e.target.value = "";
-    if (!arq) return;
-    const el = $("#cb-msg");
+    const arqs = Array.from(e.target.files || []); e.target.value = "";
+    if (!arqs.length) return;
+    msg($("#cb-msg"), "");
+    const caixa = $("#cb-msgs"); caixa.innerHTML = "";
+    for (const arq of arqs) {
+      const el = document.createElement("p"); el.className = "msg"; caixa.appendChild(el);
+      await subirArquivoComb(arq, el);
+    }
+  });
+  async function subirArquivoComb(arq, el) {
     try {
       msg(el, "Lendo " + arq.name + "…");
       const buf = await arq.arrayBuffer();
@@ -636,9 +644,9 @@
       const lido = regs.reduce((a, r) => a + n0(r.total), 0);
       const doRel = temCC ? totalCC : totalComb;
       const confere = doRel ? (Math.abs(doRel - lido) < 1 ? ` Total confere com o relatório: R$ ${fmtN(lido, 2)}.` : ` ⚠ Total lido R$ ${fmtN(lido, 2)} × total do relatório R$ ${fmtN(doRel, 2)} (me mande o arquivo para eu conferir).`) : ` Total lido: R$ ${fmtN(lido, 2)}.`;
-      msg(el, `✓ ${regs.length} linhas de ${nomeMes(mes)} gravadas.` + confere + (repetidas ? ` ${repetidas} linha(s) repetida(s) ignorada(s).` : "") + (fora ? ` ${fora} placa(s) não estão cadastradas na frota.` : ""), doRel && Math.abs(doRel - lido) >= 1 ? "erro" : "ok");
-    } catch (err) { msg(el, "Erro ao subir: " + (err.message || err), "erro"); }
-  });
+      msg(el, `✓ ${arq.name}: ${regs.length} linhas de ${nomeMes(mes)} gravadas.` + confere + (repetidas ? ` ${repetidas} linha(s) repetida(s) ignorada(s).` : "") + (fora ? ` ${fora} placa(s) não estão cadastradas na frota.` : ""), doRel && Math.abs(doRel - lido) >= 1 ? "erro" : "ok");
+    } catch (err) { msg(el, arq.name + ": erro ao subir: " + (err.message || err), "erro"); }
+  }
 
   function montarFiltrosComb() {
     const meses = Array.from(new Set(COMB.map(x => x.mes))).sort().reverse();
