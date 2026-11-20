@@ -184,3 +184,8 @@ body.ocupado .bt,body.ocupado .modal-caixa .bt{pointer-events:none;opacity:.6}
 .tab-cartoes .uso{width:46px}
 .tab-cartoes td.num,.tab-comb td.num{white-space:nowrap;overflow-wrap:normal}
 .tab-comb{min-width:1500px}
+
+/* barra de equipe (vale para todas as telas) */
+.barra-equipe{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--painel);border:1px solid var(--linha);border-radius:12px;padding:8px 12px;margin:0 0 14px;position:sticky;top:0;z-index:5}
+.barra-equipe select{font:inherit;padding:7px 10px;border:1px solid var(--linha);border-radius:8px;background:#fff;max-width:260px}
+.barra-equipe.on{border-color:var(--pri);box-shadow:0 0 0 2px rgba(14,124,134,.18);background:#f0fdfa}
