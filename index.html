@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=12">
+<link rel="stylesheet" href="estilo.css?v=13">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -72,6 +72,9 @@
         <div class="linha-titulo"><h1>Início</h1><span class="info" id="ini-data"></span></div>
         <div id="ini-alertas"></div>
         <div class="ini-comb" id="ini-comb" hidden>
+          <div class="ini-filtros"><b>Combustível</b>
+            <select id="ic-gestor"><option value="">Todos os gestores</option></select>
+            <select id="ic-contrato"><option value="">Todos os contratos</option></select></div>
           <div class="cartao-limite" data-ir="combustivel"><div class="cl-topo"><b>Limite disponível</b><span aria-hidden="true">👁</span></div>
             <div class="cl-valor" id="ic-saldo"></div><div class="cl-sub" id="ic-limite"></div></div>
           <div class="cartao-gasto" data-ir="combustivel"><div class="cg-topo"><div><b>Gasto no mês</b><small id="ic-periodo"></small></div>
@@ -172,6 +175,7 @@
         <div class="filtros">
           <select id="cb-mes"></select>
           <select id="cb-gestor"><option value="">Todos os gestores</option></select>
+          <select id="cb-contrato"><option value="">Todos os contratos</option></select>
           <select id="cb-comb"><option value="">Todos os combustíveis</option></select>
           <select id="cb-cc"><option value="">Todos os centros de custo</option></select>
           <input id="cb-cc-txt" type="search" placeholder="Centro de custo contém… (ex.: claro sp)" style="min-width:230px">
@@ -184,9 +188,9 @@
         <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Centro de custo</th><th class="num">Carros</th><th class="num">Litros</th><th class="num">Km rodados</th><th class="num">Km/L</th><th class="num">Total R$</th><th class="num">% do gasto</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
         <div id="cb-cartoes-caixa" hidden>
           <h2 class="sub-titulo">Saldo dos cartões por técnico <span class="info" id="cb-cartoes-info"></span></h2>
-          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Técnico (responsável)</th><th>Placa</th><th>Cartão</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
+          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Condutor (base de veículos)</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes"></tbody></table></div>
           <h2 class="sub-titulo">Cartões coringa <span class="info" id="cb-cartoes-cor-info"></span></h2>
-          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Responsável</th><th>Placa</th><th>Cartão</th><th>Centro de custo</th><th>Modelo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes-cor"></tbody></table></div>
+          <div class="tabela-caixa cc-caixa"><table class="tabela"><thead><tr><th>Condutor / responsável</th><th>Placa</th><th>Gestor operação</th><th>Contrato</th><th>Centro de custo</th><th class="num">Limite atual</th><th class="num">Utilizado</th><th class="num">Saldo</th><th class="num">% usado</th></tr></thead><tbody id="tb-cartoes-cor"></tbody></table></div>
         </div>
         <h2 class="sub-titulo">Por condutor</h2>
         <div class="tabela-caixa"><table class="tabela"><thead id="cb-cab"></thead><tbody id="tb-comb"></tbody></table></div>
@@ -256,6 +260,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>
