@@ -559,7 +559,12 @@
       msg(el, "Lendo " + arq.name + "…");
       const buf = await arq.arrayBuffer();
       let wb;
-      if (/\.(csv|txt)$/i.test(arq.name)) {
+      const inicio = new TextDecoder("windows-1252").decode(buf.slice(0, 4000));
+      if (/<\s*(table|tr|td|html|main)\b/i.test(inicio)) {
+        // o ".xls" da Ticket Log é uma página HTML: lê a tabela respeitando as células mescladas
+        let txt; try { txt = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e2) { txt = new TextDecoder("windows-1252").decode(buf); }
+        wb = { SheetNames: ["html"], Sheets: { html: XLSX.utils.aoa_to_sheet(htmlParaMatriz(txt)) } };
+      } else if (/\.(csv|txt)$/i.test(arq.name)) {
         let txt; try { txt = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e2) { txt = new TextDecoder("windows-1252").decode(buf); }
         const sep = (txt.split("\n").slice(0, 10).join("").match(/;/g) || []).length > (txt.split("\n").slice(0, 10).join("").match(/\t/g) || []).length ? ";" : (/\t/.test(txt) ? "\t" : ";");
         const linhasTxt = txt.replace(/^\uFEFF/, "").split(/\r?\n/).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, "").trim()));
@@ -734,6 +739,32 @@
     XLSX.writeFile(wb, `Combustivel_${fcb.mes}.xlsx`);
   });
 
+  // tabela HTML → linhas e colunas (colspan/rowspan viram células vazias, como a mesclagem do Excel)
+  function htmlParaMatriz(txt) {
+    const doc = new DOMParser().parseFromString(txt, "text/html");
+    const out = [];
+    doc.querySelectorAll("table").forEach(tb => {
+      const ocupado = [];   // ocupado[linha][coluna] por rowspan de cima
+      Array.from(tb.rows).forEach((tr, ri) => {
+        const linha = []; ocupado[ri] = ocupado[ri] || [];
+        let c = 0;
+        Array.from(tr.cells).forEach(td => {
+          while (ocupado[ri][c]) { linha[c] = ""; c++; }
+          const v = (td.textContent || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+          const cs = Math.max(1, Number(td.getAttribute("colspan")) || 1), rs = Math.max(1, Number(td.getAttribute("rowspan")) || 1);
+          for (let k = 0; k < cs; k++) {
+            linha[c + k] = k === 0 ? v : "";
+            for (let r = 1; r < rs; r++) { ocupado[ri + r] = ocupado[ri + r] || []; ocupado[ri + r][c + k] = true; }
+          }
+          c += cs;
+        });
+        for (let k = 0; k < linha.length; k++) if (linha[k] === undefined) linha[k] = "";
+        out.push(linha);
+      });
+    });
+    return out;
+  }
+
   // ---------- extrato simplificado
   async function subirExtrato(m, el) {
     const limpa = h => sem(h).replace(/[^a-z0-9/ ]/g, "").replace(/\s+/g, " ").trim();
@@ -804,12 +835,19 @@
     const ls = CARTOES.filter(c => (!fcb.cc || c.centro_custo === fcb.cc) && (!fcb.gestor || (veic.get(c.placa) || {}).gestor_operacao === fcb.gestor)
       && (!fcb.busca || sem([c.cartao, c.placa, c.responsavel, c.centro_custo, c.modelo].join(" ")).includes(fcb.busca)))
       .map(c => Object.assign({}, c, { pct: n0(c.limite_atual) > 0 ? n0(c.utilizado) / n0(c.limite_atual) * 100 : 0 })).sort((a, b) => b.pct - a.pct);
-    $("#cb-cartoes-info").textContent = `extrato de ${CARTOES[0].data_ref || "-"} · ${ls.length} cartões`;
-    const s = ls.reduce((a, c) => ({ l: a.l + n0(c.limite_atual), u: a.u + n0(c.utilizado), s: a.s + n0(c.saldo) }), { l: 0, u: 0, s: 0 });
-    $("#tb-cartoes").innerHTML = ls.map(c => `<tr class="${c.pct >= 90 ? "tem-alerta" : ""}"><td>${esc(c.cartao)}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.responsavel)}</td><td>${esc(c.centro_custo)}</td><td>${esc(c.modelo)}</td>
+    const linhasCartoes = (lista, vazio) => {
+      if (!lista.length) return `<tr><td colspan="9" class="info">${vazio}</td></tr>`;
+      const s = lista.reduce((a, c) => ({ l: a.l + n0(c.limite_atual), u: a.u + n0(c.utilizado), s: a.s + n0(c.saldo) }), { l: 0, u: 0, s: 0 });
+      return lista.map(c => `<tr class="${c.pct >= 90 ? "tem-alerta" : ""}"><td class="cond">${esc(c.responsavel)}</td><td><b>${esc(c.placa)}</b></td><td>${esc(c.cartao)}</td><td>${esc(c.centro_custo)}</td><td>${esc(c.modelo)}</td>
       <td class="num">${fmtN(n0(c.limite_atual), 2)}</td><td class="num">${fmtN(n0(c.utilizado), 2)}</td><td class="num"><b>${fmtN(n0(c.saldo), 2)}</b></td>
       <td class="num"><span class="uso"><i style="width:${Math.min(100, c.pct)}%;background:${c.pct >= 90 ? "#b91c1c" : c.pct >= 70 ? "#ea580c" : "#0e7c86"}"></i></span> ${fmtN(c.pct, 0)}%</td></tr>`).join("")
-      + `<tr><td colspan="5"><b>Total</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.u, 2)}</b></td><td class="num"><b>${fmtN(s.s, 2)}</b></td><td class="num"><b>${s.l ? fmtN(s.u / s.l * 100, 0) + "%" : "-"}</b></td></tr>`;
+      + `<tr><td colspan="5"><b>Total (${lista.length} ${lista.length === 1 ? "cartão" : "cartões"})</b></td><td class="num"><b>${fmtN(s.l, 2)}</b></td><td class="num"><b>${fmtN(s.u, 2)}</b></td><td class="num"><b>${fmtN(s.s, 2)}</b></td><td class="num"><b>${s.l ? fmtN(s.u / s.l * 100, 0) + "%" : "-"}</b></td></tr>`;
+    };
+    const cor = ls.filter(c => ehCoringa({ placa: c.placa, modelo: c.modelo }, veic.get(c.placa))), tec = ls.filter(c => cor.indexOf(c) < 0);
+    $("#cb-cartoes-info").textContent = `extrato de ${CARTOES[0].data_ref || "-"} · ${tec.length} cartões`;
+    $("#cb-cartoes-cor-info").textContent = `${cor.length} cartões`;
+    $("#tb-cartoes").innerHTML = linhasCartoes(tec, "Nenhum cartão com esse filtro.");
+    $("#tb-cartoes-cor").innerHTML = linhasCartoes(cor, "Nenhum cartão coringa com esse filtro.");
   }
 
   // início: cartões "Limite disponível" e "Gasto no mês" (mês atual; filtra por centro de custo)
