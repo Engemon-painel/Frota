@@ -168,6 +168,16 @@
   }
   // ------------------------------------------------------------------ filtro de equipe (vale para o sistema inteiro)
   const TODOS = { veic: [], hist: [], ocor: [], comb: [], cart: [], hier: [] };
+  // combustível: só os carros destes contratos (Operação na base de veículos)
+  const CONTRATOS_FROTA = ["Claro Infra Sp", "RATEIO", "Volante", "Equinix Sp4", "Claro Arcon", "Claro Infra Rj", "Comercial", "Cix - Poupatempo Pr",
+    "Suprimentos", "Cix - Poupatempo Sp", "Femsa Norte", "Sistemas/gestão", "Operações", "Backoffice", "Cmoc", "Bradesco Spot", "Industrial", "Siemens",
+    "Controladoria", "CEO", "Care Plus", "Bresco Vira Copos", "Motorola"];
+  const chaveCt = c => sem(c).replace(/[^a-z0-9]+/g, " ").trim();
+  const CT_SET = new Set(CONTRATOS_FROTA.map(chaveCt));
+  let ESCOPO = true;
+  try { ESCOPO = localStorage.getItem("frotaEscopo_v1") !== "0"; } catch (e) { }
+  let PLACAS_ESCOPO = new Set();
+  const noEscopo = placa => !ESCOPO || PLACAS_ESCOPO.has(String(placa || "").toUpperCase());
   const EQ = { ger: "", coord: "", sup: "" };
   try { Object.assign(EQ, JSON.parse(localStorage.getItem("frotaEquipe_v1") || "{}")); } catch (e) { }
   const equipeAtiva = () => !!(EQ.ger || EQ.coord || EQ.sup);
@@ -177,6 +187,7 @@
     return { ger: h.gerente || v.gestor_operacao || "", coord: v.coordenador || h.coordenador || "", sup: v.supervisor || h.supervisor || "" };
   }
   function filtrarEquipe() {
+    PLACAS_ESCOPO = new Set(TODOS.veic.filter(v => CT_SET.has(chaveCt(v.operacao))).map(v => v.placa));
     const mapaHier = new Map(TODOS.hier.map(h => [sem(h.colaborador), h]));
     const eqs = TODOS.veic.map(v => [v, equipeDoCarro(v, mapaHier)]);
     const bate = (e, comCoord, comSup) => (!EQ.ger || sem(e.ger) === sem(EQ.ger)) && (!comCoord || !EQ.coord || sem(e.coord) === sem(EQ.coord)) && (!comSup || !EQ.sup || sem(e.sup) === sem(EQ.sup));
@@ -190,14 +201,15 @@
     pre("#eq-sup", lista("sup", e => bate(e, true, false)), "Todos os supervisores", "sup");
     try { localStorage.setItem("frotaEquipe_v1", JSON.stringify(EQ)); } catch (e) { }
     if (!equipeAtiva()) {
-      VEICULOS = TODOS.veic; HIST = TODOS.hist; OCORRENCIAS = TODOS.ocor; COMB = TODOS.comb; CARTOES = TODOS.cart; HIER = TODOS.hier;
+      VEICULOS = TODOS.veic; HIST = TODOS.hist; OCORRENCIAS = TODOS.ocor; COMB = TODOS.comb.filter(x => noEscopo(x.placa)); CARTOES = TODOS.cart.filter(x => noEscopo(x.placa)); HIER = TODOS.hier;
     } else {
       VEICULOS = eqs.filter(x => bate(x[1], true, true)).map(x => x[0]);
       const placas = new Set(VEICULOS.map(v => v.placa));
       HIST = TODOS.hist.filter(h => placas.has(h.placa));
       OCORRENCIAS = TODOS.ocor.filter(o => placas.has(o.placa));
       COMB = TODOS.comb.filter(x => placas.has(x.placa));
-      CARTOES = TODOS.cart.filter(x => placas.has(String(x.placa || "").toUpperCase()));
+      CARTOES = TODOS.cart.filter(x => placas.has(String(x.placa || "").toUpperCase()) && noEscopo(x.placa));
+      COMB = COMB.filter(x => noEscopo(x.placa));
       HIER = TODOS.hier.filter(h => bate(hierEq(h), true, true));
     }
     $("#eq-limpar").hidden = !equipeAtiva();
@@ -321,7 +333,7 @@
   // ------------------------------------------------------------------ início (resumo)
   function alertaTransInicio(mes, placas, g, ct) {
     if (!TRANS_C[mes]) { garantirTrans(mes, () => desenharInicio()); return ""; }
-    const rows = TRANS_C[mes].filter(t => (!g && !ct && !equipeAtiva()) || placas.has(t.placa));
+    const rows = TRANS_C[mes].filter(t => noEscopo(t.placa) && ((!g && !ct && !equipeAtiva()) || placas.has(t.placa)));
     const al = alertasTrans(rows);
     const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
     if (!mais2 && !acima) return "";
@@ -757,6 +769,12 @@
   $("#cb-busca").addEventListener("input", e => { fcb.busca = sem(e.target.value); desenharComb(); });
   $("#cb-alerta").addEventListener("change", e => { fcb.alerta = e.target.checked; desenharComb(); });
   $("#cb-difnome").addEventListener("change", e => { fcb.difnome = e.target.checked; desenharComb(); });
+  $("#cb-escopo").checked = ESCOPO;
+  $("#cb-escopo").parentElement.title = "Contratos: " + CONTRATOS_FROTA.join(", ");
+  $("#cb-escopo").addEventListener("change", e => {
+    ESCOPO = e.target.checked; try { localStorage.setItem("frotaEscopo_v1", ESCOPO ? "1" : "0"); } catch (x) { }
+    filtrarEquipe(); redesenharTudo();
+  });
   // responsável do cartão (Ticket Log) diferente do condutor da base de veículos
   const nomeDiferente = p => { const q = (p.motoristas && p.motoristas[0]) || (p.cartao && p.cartao.responsavel); return !!(q && p.condutor && sem(q) !== sem(p.condutor)); };
 
@@ -1019,7 +1037,7 @@
     const rows = TRANS_C[mes] || [];
     const veicVis = new Set(VEICULOS.map(v => v.placa));
     const ccCartao = new Map(CARTOES.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
-    return rows.filter(t => (!equipeAtiva() || veicVis.has(t.placa))
+    return rows.filter(t => noEscopo(t.placa) && (!equipeAtiva() || veicVis.has(t.placa))
       && (!opts || ((!opts.g && !opts.ct) || bateDono(t.placa, null, opts.g, opts.ct)) && (!opts.cc || bateCC(ccCartao.get(t.placa) || "", opts.cc))
         && (!opts.busca || sem([t.placa, t.motorista, t.responsavel, t.estabelecimento, t.cidade].join(" ")).includes(opts.busca))));
   }
@@ -1174,7 +1192,7 @@
     const ca = CARTOES.filter(filtroIni);
     const per = (doMes.find(x => x.periodo) || {}).periodo;
     let saldo, sub, gasto, periodo, det;
-    if (ext && !cc && !g && !ct && !equipeAtiva()) {
+    if (ext && !ESCOPO && !cc && !g && !ct && !equipeAtiva()) {
       // contrato inteiro: números do Extrato Simplificado (iguais ao portal)
       saldo = n0(ext.saldo_contratual);
       sub = `${fmtN(100 - n0(ext.pct_consumido), 2)}% disponível${ext.proxima_renovacao ? " · renova em " + ext.proxima_renovacao : ""}`;
@@ -1206,7 +1224,7 @@
     if (trMes.length) {
       const ccPl = new Map(TODOS.cart.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
       const vis = new Set(VEICULOS.map(v => v.placa));
-      const trs = trMes.filter(t => (!equipeAtiva() || vis.has(t.placa)) && bateCC(ccPl.get(t.placa) || "", cc) && bateDono(t.placa, null, g, ct));
+      const trs = trMes.filter(t => noEscopo(t.placa) && (!equipeAtiva() || vis.has(t.placa)) && bateCC(ccPl.get(t.placa) || "", cc) && bateDono(t.placa, null, g, ct));
       const gt = trs.reduce((a, t) => a + n0(numBR(t.valor)), 0), lt = trs.reduce((a, t) => a + n0(numBR(t.litros)), 0), kt = trs.reduce((a, t) => a + n0(numBR(t.km_rodados)), 0);
       const ult = trs.reduce((m, t) => String(t.data) > m ? String(t.data) : m, "");
       gasto = gt;
