@@ -6,7 +6,7 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=23">
+<link rel="stylesheet" href="estilo.css?v=25">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -40,32 +40,32 @@
     <div class="corpo">
     <aside class="menu" id="menu">
       <div class="menu-titulo">☰ Menu</div>
-      <button class="mi aba on" data-aba="inicio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Início</span></button>
+      <button class="mi aba on" data-aba="inicio" data-acesso="inicio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Início</span></button>
       <div class="grupo aberto">
         <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM8 11h8M8 15h5"/></svg><span>Cadastros</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
         <div class="sub">
-          <button class="ms aba" data-aba="veiculos">Veículos</button>
+          <button class="ms aba" data-aba="veiculos" data-acesso="veiculos">Veículos</button>
           <button class="ms" data-acao="nova-placa" data-so-admin hidden>+ Nova placa</button>
           <button class="ms aba" data-aba="usuarios" data-so-admin hidden>Usuários</button>
           <button class="ms" data-acao="carga" data-so-admin hidden>Carga inicial (planilha)</button>
-          <button class="ms aba" data-aba="hierarquia">Hierarquia (equipes)</button>
+          <button class="ms aba" data-aba="hierarquia" data-acesso="hierarquia">Hierarquia (equipes)</button>
           <button class="ms" data-acao="organograma" data-so-gerente hidden>Preencher pelo Organograma</button>
         </div>
       </div>
       <div class="grupo aberto">
         <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg><span>Operacional</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
         <div class="sub">
-          <button class="ms" data-acao="trocar">Trocar condutor</button>
-          <button class="ms aba" data-aba="historico">Histórico de uso</button>
-          <button class="ms aba" data-aba="ocorrencias">Ocorrências</button>
+          <button class="ms" data-acao="trocar" data-acesso="trocar">Trocar condutor</button>
+          <button class="ms aba" data-aba="historico" data-acesso="historico">Histórico de uso</button>
+          <button class="ms aba" data-aba="ocorrencias" data-acesso="ocorrencias">Ocorrências</button>
         </div>
       </div>
       <div class="grupo aberto">
         <button class="mg"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Relatórios</span><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></i></button>
         <div class="sub">
-          <button class="ms aba" data-aba="cruzar">Multas e batidas</button>
-          <button class="ms aba" data-aba="combustivel">Consumo de combustível</button>
-          <button class="ms" data-acao="exportar">Exportar Excel</button>
+          <button class="ms aba" data-aba="cruzar" data-acesso="multas">Multas e batidas</button>
+          <button class="ms aba" data-aba="combustivel" data-acesso="combustivel">Consumo de combustível</button>
+          <button class="ms" data-acao="exportar" data-acesso="exportar">Exportar Excel</button>
         </div>
       </div>
     </aside>
@@ -82,15 +82,15 @@
         <div class="ini-filtros" id="ini-comb-filtros"><b>Filtrar:</b>
           <select id="ic-gestor"><option value="">Todos os gestores</option></select>
           <select id="ic-contrato"><option value="">Todos os contratos</option></select>
-          <input id="ic-cc-txt" type="search" list="dl-cc" placeholder="Centro de custo: todos (escolha ou digite, ex.: claro sp)" title="Escolha um centro de custo da lista ou digite palavras (ex.: claro sp) para somar vários"></div>
+          <input id="ic-cc-txt" data-acesso="combustivel" type="search" list="dl-cc" placeholder="Centro de custo: todos (escolha ou digite, ex.: claro sp)" title="Escolha um centro de custo da lista ou digite palavras (ex.: claro sp) para somar vários"></div>
         <div id="ini-alertas"></div>
-        <div class="ini-comb" id="ini-comb" hidden>
+        <div class="ini-comb" id="ini-comb" data-acesso="combustivel" hidden>
           <div class="cartao-limite" data-ir="combustivel"><div class="cl-topo"><b>Limite disponível</b><span aria-hidden="true">👁</span></div>
             <div class="cl-valor" id="ic-saldo"></div><div class="cl-sub" id="ic-limite"></div></div>
           <div class="cartao-gasto" data-ir="combustivel"><div class="cg-topo"><div><b>Gasto no mês</b><small id="ic-periodo"></small></div></div>
             <div class="cg-valor" id="ic-gasto"></div><div class="cl-sub2" id="ic-det"></div></div>
         </div>
-        <div class="painel graf-caixa" id="ini-graf-caixa" hidden>
+        <div class="painel graf-caixa" id="ini-graf-caixa" data-acesso="combustivel" hidden>
           <h2 class="graf-titulo">Comparativo de gastos <span class="info" id="ini-graf-cc"></span></h2>
           <div class="graf-area"><canvas id="ini-graf" aria-label="Gasto por mês e combustível"></canvas></div>
         </div>
@@ -110,7 +110,7 @@
             <button class="bt bt-pri" id="bt-novo-veic" data-so-admin hidden>+ Nova placa</button>
             <button class="bt bt-sec" id="bt-org" data-so-gerente hidden title="Preenche supervisor e coordenador dos carros pelo Organograma da Claro">👥 Preencher pelo Organograma</button>
             <input id="arq-org" type="file" accept=".xlsx,.xls,.xlsm" hidden>
-            <button class="bt bt-sec" id="bt-exportar">⬇ Exportar Excel</button>
+            <button class="bt bt-sec" id="bt-exportar" data-acesso="exportar">⬇ Exportar Excel</button>
             <label class="bt bt-sec" for="arq-frota" data-so-admin hidden title="Usar só uma vez, para trazer a base de hoje">⬆ Carga inicial (planilha)</label>
             <input id="arq-frota" type="file" accept=".xlsx,.xls" hidden>
           </div>
@@ -137,7 +137,7 @@
       <!-- HISTÓRICO DE USO -->
       <div id="aba-historico" class="aba-conteudo" hidden>
         <div class="linha-titulo"><h1>Histórico de uso</h1>
-          <button class="bt bt-pri" id="bt-trocar">🔄 Trocar condutor</button></div>
+          <button class="bt bt-pri" id="bt-trocar" data-acesso="trocar">🔄 Trocar condutor</button></div>
         <p class="nota">Cada troca de motorista fica gravada com a data. É por aqui que o sistema sabe quem estava com cada carro em qualquer dia.</p>
         <div class="quem">
           <b>Quem estava com o carro?</b>
@@ -178,7 +178,7 @@
           <div class="acoes">
             <label class="info" data-so-admin hidden>Mês da planilha <input id="cb-mes-up" type="month"></label>
             <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir arquivos (consumo, extrato, transações)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
-            <button class="bt bt-sec" id="bt-comb-exp">⬇ Baixar Excel</button>
+            <button class="bt bt-sec" id="bt-comb-exp" data-acesso="exportar">⬇ Baixar Excel</button>
           </div></div>
         <p class="nota">Suba o relatório de consumo (escolha o mês), o <b>Extrato Simplificado</b> (saldo dos cartões) ou a base de <b>transações</b> (cada abastecimento com data e motorista); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
         <p id="cb-msg" class="msg"></p><div id="cb-msgs"></div>
@@ -212,7 +212,7 @@
           <div class="acoes">
             <button class="bt bt-pri" id="bt-hi-novo" data-so-gerente hidden>+ Adicionar colaborador</button>
             <label class="bt bt-sec" for="arq-hier" data-so-gerente hidden>⬆ Subir De-Para (Excel)</label><input id="arq-hier" type="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
-            <button class="bt bt-sec" id="bt-hi-exp">⬇ Baixar Excel</button>
+            <button class="bt bt-sec" id="bt-hi-exp" data-acesso="exportar">⬇ Baixar Excel</button>
           </div></div>
         <p class="nota">Quem é o <b>supervisor</b>, o <b>coordenador</b> e o <b>gerente</b> de cada colaborador. O carro pega o supervisor e o coordenador do <b>condutor</b> sozinho — na hora de gravar aqui e sempre que o condutor do carro mudar. Cada gerente cuida da própria equipe.</p>
         <p id="hi-msg" class="msg"></p>
@@ -229,7 +229,7 @@
       <!-- OCORRÊNCIAS -->
       <div id="aba-ocorrencias" class="aba-conteudo" hidden>
         <div class="linha-titulo"><h1>Ocorrências</h1>
-          <button class="bt bt-pri" id="bt-nova-ocor">+ Registrar ocorrência</button></div>
+          <button class="bt bt-pri" id="bt-nova-ocor" data-acesso="ocorrencias">+ Registrar ocorrência</button></div>
         <div class="quem">
           <b>Quem estava com o carro?</b>
           <select id="q-placa"></select>
@@ -266,12 +266,24 @@
           </select>
           <input id="u-equipe" list="lista-equipes" placeholder="Gestor operação / Coordenador / Supervisor que ele vê">
           <datalist id="lista-equipes"></datalist>
-          <button class="bt bt-pri" type="submit">Salvar</button>
+          <fieldset class="acessos" id="u-acessos"><legend>Pode acessar <button type="button" class="link" id="u-ac-todos">marcar tudo</button> · <button type="button" class="link" id="u-ac-nada">desmarcar</button></legend>
+            <label><input type="checkbox" value="inicio" checked> Início</label>
+            <label><input type="checkbox" value="veiculos" checked> Veículos</label>
+            <label><input type="checkbox" value="trocar" checked> Trocar condutor</label>
+            <label><input type="checkbox" value="historico" checked> Histórico de uso</label>
+            <label><input type="checkbox" value="ocorrencias" checked> Ocorrências</label>
+            <label><input type="checkbox" value="multas" checked> Multas e batidas</label>
+            <label><input type="checkbox" value="combustivel" checked> Combustível e cartões</label>
+            <label><input type="checkbox" value="hierarquia" checked> Hierarquia (equipes)</label>
+            <label><input type="checkbox" value="exportar" checked> Baixar Excel</label>
+            <small class="info">Sem o Início, a pessoa entra direto na primeira tela liberada. O administrador acessa tudo.</small>
+          </fieldset>
+          <button class="bt bt-pri" type="submit" id="u-salvar">Salvar</button>
         </form>
         <p id="u-msg" class="msg"></p>
         <div class="tabela-caixa">
           <table class="tabela">
-            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Vê os carros de</th><th>Ativo</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Vê os carros de</th><th>Pode acessar</th><th>Ativo</th><th></th></tr></thead>
             <tbody id="tb-usuarios"></tbody>
           </table>
         </div>
@@ -288,6 +300,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>
