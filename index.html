@@ -6,14 +6,15 @@
 <title>Gestão de Frotas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="estilo.css?v=19">
+<link rel="stylesheet" href="estilo.css?v=22">
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
   <!-- LOGIN -->
   <section id="tela-login" class="login" hidden>
     <form id="form-login" class="login-caixa" autocomplete="on">
-      <div class="login-marca">🚗 <b>Gestão de Frotas</b></div>
+      <div class="login-logo"><img src="logo-engemon.png" alt="Engemon OP Services" width="192" height="40"></div>
+      <div class="login-marca"><b>Gestão de Frotas</b></div>
       <p class="login-sub">Entre com o seu e-mail da Engemon</p>
       <label for="login-email">E-mail</label>
       <input id="login-email" type="email" required autocomplete="username" placeholder="nome@engemon.com.br">
@@ -32,7 +33,7 @@
   <section id="tela-app" hidden>
     <header class="topo">
       <button class="bt-menu" id="bt-menu" aria-label="Abrir menu">☰</button>
-      <div class="topo-marca">🚗 Gestão de Frotas</div>
+      <div class="topo-marca"><img src="logo-engemon.png" alt="Engemon" class="topo-logo"><span>Gestão de Frotas</span></div>
       <div class="topo-user"><span id="user-nome"></span> <span id="user-perfil" class="tag"></span>
         <button class="bt bt-sec" id="bt-sair">Sair</button></div>
     </header>
