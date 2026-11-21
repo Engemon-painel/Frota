@@ -1200,6 +1200,19 @@
       periodo = doMes.length ? (per ? per + " · " + nomeMes(mes) : nomeMes(mes)) : "Ainda não subiu o consumo de " + nomeMes(mes);
       det = `${fmtN(litros)} litros · ${fmtN(kmIni)} km · ${new Set(rs.map(x => x.placa)).size} carro(s)`;
     }
+    // gasto do mês de calendário (igual ao portal): soma das transações de 01/mm até a última transação
+    if (!TRANS_C[mes]) garantirTrans(mes, () => desenharInicioComb());
+    const trMes = TRANS_C[mes] || [];
+    if (trMes.length) {
+      const ccPl = new Map(TODOS.cart.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
+      const vis = new Set(VEICULOS.map(v => v.placa));
+      const trs = trMes.filter(t => (!equipeAtiva() || vis.has(t.placa)) && bateCC(ccPl.get(t.placa) || "", cc) && bateDono(t.placa, null, g, ct));
+      const gt = trs.reduce((a, t) => a + n0(numBR(t.valor)), 0), lt = trs.reduce((a, t) => a + n0(numBR(t.litros)), 0), kt = trs.reduce((a, t) => a + n0(numBR(t.km_rodados)), 0);
+      const ult = trs.reduce((m, t) => String(t.data) > m ? String(t.data) : m, "");
+      gasto = gt;
+      periodo = `de 01/${mes.slice(5, 7)} até ${ult ? ult.slice(8, 10) + "/" + ult.slice(5, 7) : "hoje"} · transações` + (ext && !cc && !g && !ct && !equipeAtiva() && ext.proxima_renovacao ? ` · cartões renovam em ${ext.proxima_renovacao}` : "");
+      det = `${trs.length.toLocaleString("pt-BR")} abastecimentos · ${fmtN(lt)} litros · ${fmtN(kt)} km` + (kt ? ` · R$/km ${fmtN(gt / kt, 2)}` : "");
+    }
     $("#ic-saldo").textContent = "R$ " + fmtN(saldo, 2);
     $("#ic-limite").textContent = sub;
     $("#ic-periodo").textContent = periodo;
