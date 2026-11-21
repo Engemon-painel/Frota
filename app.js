@@ -151,6 +151,7 @@
       $("#user-perfil").textContent = { admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[EU.perfil] || EU.perfil;
       $$("[data-so-admin]").forEach(el => { el.hidden = EU.perfil !== "admin"; });
       $$("[data-so-gerente]").forEach(el => { el.hidden = EU.perfil !== "admin" && EU.perfil !== "gerente"; });
+      aplicarAcessos();
       $("#tela-login").hidden = true; $("#tela-app").hidden = false;
     }
     redesenharTudo();
@@ -337,7 +338,7 @@
     const al = alertasTrans(rows);
     const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
     if (!mais2 && !acima) return "";
-    return `<div class="alerta" data-ir="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque em ${nomeMes(mes)}. Clique para ver.</div>`;
+    return `<div class="alerta" data-ir="combustivel" data-acesso="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque em ${nomeMes(mes)}. Clique para ver.</div>`;
   }
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
@@ -386,7 +387,27 @@
     $("#ini-ocor").innerHTML = abertas.slice(0, 8).map(o => `<li><b>${esc(o.placa)} · ${esc(o.tipo)}</b><span>${esc(o.condutor || "condutor não identificado")}</span><span class="info">${dataHora(o.data_hora)}</span></li>`).join("") || '<li class="info">Nenhuma ocorrência aberta.</li>';
   }
 
+  // ------------------------------------------------------------------ o que cada usuário pode acessar
+  const ACESSOS = { inicio: "Início", veiculos: "Veículos", trocar: "Trocar condutor", historico: "Histórico", ocorrencias: "Ocorrências", multas: "Multas e batidas",
+    combustivel: "Combustível", hierarquia: "Hierarquia", exportar: "Baixar Excel" };
+  const ABA_ACESSO = { inicio: "inicio", veiculos: "veiculos", historico: "historico", ocorrencias: "ocorrencias", cruzar: "multas", combustivel: "combustivel", hierarquia: "hierarquia" };
+  const listaAcessos = u => String((u && u.acessos) || "").split(",").map(x => x.trim()).filter(Boolean);
+  const pode = k => !EU || EU.perfil === "admin" || !listaAcessos(EU).length || listaAcessos(EU).indexOf(k) >= 0;
+  function aplicarAcessos() {
+    Object.keys(ACESSOS).forEach(k => document.body.classList.toggle("sem-" + k, !pode(k)));
+    // grupo do menu sem nenhum item liberado some
+    $$("#menu .grupo").forEach(g => { g.hidden = !Array.from(g.querySelectorAll(".sub button")).some(b => getComputedStyle(b).display !== "none" && !b.hidden); });
+    const ativa = $$(".aba-conteudo").find(c => !c.hidden);
+    const id = ativa ? ativa.id.replace("aba-", "") : "inicio";
+    if (ABA_ACESSO[id] && !pode(ABA_ACESSO[id])) irPara(primeiraAba());
+  }
+  // primeira tela que a pessoa pode abrir (na ordem do menu)
+  function primeiraAba() {
+    const ordem = ["inicio", "veiculos", "hierarquia", "historico", "ocorrencias", "cruzar", "combustivel"];
+    return ordem.find(a => pode(ABA_ACESSO[a])) || "inicio";
+  }
   function irPara(aba) {
+    if (ABA_ACESSO[aba] && !pode(ABA_ACESSO[aba])) aba = primeiraAba();
     $$(".aba").forEach(x => x.classList.toggle("on", x.dataset.aba === aba));
     $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + aba; });
   }
@@ -1681,11 +1702,21 @@
       <td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td>
       <td>${esc({ admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[u.perfil] || u.perfil)}</td>
       <td>${esc(u.perfil === "admin" ? "Todos" : (u.perfil === "gerente" ? u.gestor_operacao : u.perfil === "coordenador" ? u.coordenador : u.supervisor)) || "—"}</td>
+      <td>${u.perfil === "admin" || !listaAcessos(u).length ? '<span class="tag-ac">Tudo</span>' : listaAcessos(u).map(k => `<span class="tag-ac">${esc(ACESSOS[k] || k)}</span>`).join("")}</td>
       <td>${u.ativo ? "Sim" : "Não"}${u.tem_senha ? "" : ' <small style="color:#b45309">(sem senha ainda)</small>'}</td>
-      <td>${String(u.email).toLowerCase() === String(EU.email).toLowerCase() ? "" : `<button class="bt bt-sec" data-acao="ativar" data-email="${esc(u.email)}" data-ativo="${u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button>
+      <td><button class="bt bt-sec" data-acao="editar" data-email="${esc(u.email)}">Editar</button> ${String(u.email).toLowerCase() === String(EU.email).toLowerCase() ? "" : `<button class="bt bt-sec" data-acao="ativar" data-email="${esc(u.email)}" data-ativo="${u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button>
         <button class="bt bt-sec" data-acao="zerar" data-email="${esc(u.email)}" title="A pessoa cria uma senha nova em Primeiro acesso">Zerar senha</button>`}</td></tr>`).join("");
     $$("#tb-usuarios button").forEach(b => b.addEventListener("click", async () => {
       try {
+        if (b.dataset.acao === "editar") {
+          const u = USUARIOS.find(x => x.email === b.dataset.email); if (!u) return;
+          $("#u-email").value = u.email; $("#u-nome").value = u.nome; $("#u-perfil").value = u.perfil;
+          $("#u-equipe").value = u.perfil === "gerente" ? u.gestor_operacao : u.perfil === "coordenador" ? u.coordenador : u.perfil === "supervisor" ? u.supervisor : "";
+          const ac = listaAcessos(u);
+          $$("#u-acessos input").forEach(x => { x.checked = !ac.length || ac.indexOf(x.value) >= 0; });
+          $("#u-salvar").textContent = "Salvar alterações"; $("#form-user").scrollIntoView({ behavior: "smooth" });
+          return;
+        }
         if (b.dataset.acao === "zerar") {
           if (!window.confirm("Zerar a senha de " + b.dataset.email + "? A pessoa vai criar outra em Primeiro acesso.")) return;
           await api("zerar_senha", { dados: { email: b.dataset.email } });
@@ -1694,14 +1725,21 @@
       } catch (err) { msg($("#u-msg"), err.message, "erro"); }
     }));
   }
+  $("#u-ac-todos").addEventListener("click", () => $$("#u-acessos input").forEach(x => { x.checked = true; }));
+  $("#u-ac-nada").addEventListener("click", () => $$("#u-acessos input").forEach(x => { x.checked = false; }));
+  $("#u-perfil").addEventListener("change", () => { $("#u-acessos").disabled = $("#u-perfil").value === "admin"; });
   $("#form-user").addEventListener("submit", async e => {
     e.preventDefault();
     const perfil = $("#u-perfil").value, equipe = $("#u-equipe").value.trim();
     if (perfil !== "admin" && !equipe) return msg($("#u-msg"), "Informe quem essa pessoa vai ver: o Gestor operação (gerente), o Coordenador (coordenador) ou o Supervisor (supervisor).", "erro");
-    const reg = { email: $("#u-email").value.trim().toLowerCase(), nome: $("#u-nome").value.trim(), perfil, equipe };
+    const marcados = $$("#u-acessos input").filter(x => x.checked).map(x => x.value);
+    const todos = $$("#u-acessos input").length;
+    const reg = { email: $("#u-email").value.trim().toLowerCase(), nome: $("#u-nome").value.trim(), perfil, equipe,
+      acessos: perfil === "admin" || marcados.length === todos ? "" : marcados.join(",") };
+    if (perfil !== "admin" && !marcados.length) return msg($("#u-msg"), "Marque pelo menos uma coisa que a pessoa pode acessar.", "erro");
     try { await api("salvar_usuario", { dados: reg }); }
     catch (err) { return msg($("#u-msg"), err.message, "erro"); }
     msg($("#u-msg"), `✓ ${reg.nome} salvo. Agora ele entra pela tela de login em "Primeiro acesso".`, "ok");
-    e.target.reset();
+    e.target.reset(); $$("#u-acessos input").forEach(x => { x.checked = true; }); $("#u-salvar").textContent = "Salvar";
   });
 })();
