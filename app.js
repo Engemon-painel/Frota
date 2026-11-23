@@ -283,11 +283,25 @@
   $("#f-busca").addEventListener("input", e => { filtro.busca = sem(e.target.value); desenhar(); });
   $("#f-garagem").addEventListener("change", e => { filtro.garagem = e.target.value; desenhar(); });
 
+  // ---------- oficina: condutor "OFICINA" (ou "Oficina - nome", "Manutenção") = carro parado em manutenção
+  const ehOficina = nome => /\boficina\b|manutenc/.test(sem(nome));
+  const diasDesde = iso => { const t = new Date(iso).getTime(); return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86400000)); };
+  // períodos em que cada placa esteve na oficina (pela linha do tempo)
+  function periodosOficina() {
+    const m = new Map();
+    TODOS.hist.filter(h => ehOficina(h.condutor)).forEach(h => {
+      const ini = new Date(h.inicio).getTime(), fim = h.fim ? new Date(h.fim).getTime() : Date.now();
+      if (isNaN(ini)) return;
+      if (!m.has(h.placa)) m.set(h.placa, []);
+      m.get(h.placa).push([ini, fim, h.condutor]);
+    });
+    return m;
+  }
   function filtrados(ignorarStatus) {
     return VEICULOS.filter(v =>
       (!filtro.contrato || v.operacao === filtro.contrato) &&
       (!filtro.gestor || v.gestor_operacao === filtro.gestor) &&
-      (ignorarStatus || !filtro.status || v.status === filtro.status) &&
+      (ignorarStatus || !filtro.status || (filtro.status === "__oficina" ? ehOficina(v.condutor) : v.status === filtro.status)) &&
       (!filtro.garagem || (filtro.garagem === "sem" ? !v.garagem_tipo : v.garagem_tipo === filtro.garagem)) &&
       (!filtro.busca || sem([v.placa, v.condutor, v.modelo, v.marca, v.operacao, v.gestor_operacao, v.supervisor, v.coordenador, v.garagem_endereco].join(" ")).includes(filtro.busca)));
   }
@@ -297,7 +311,8 @@
     const porStatus = {};
     base.forEach(v => { const s = v.status || "Sem status"; porStatus[s] = (porStatus[s] || 0) + 1; });
     const kp = [{ r: "Total de veículos", v: base.length, cor: "#0e7c86", s: "" }]
-      .concat(Object.keys(porStatus).sort((a, b) => porStatus[b] - porStatus[a]).map(s => ({ r: s, v: porStatus[s], cor: COR_STATUS(s), s })));
+      .concat(Object.keys(porStatus).sort((a, b) => porStatus[b] - porStatus[a]).map(s => ({ r: s, v: porStatus[s], cor: COR_STATUS(s), s })))
+      .concat([{ r: "🔧 Na oficina", v: base.filter(v => ehOficina(v.condutor)).length, cor: "#7c3aed", s: "__oficina" }]);
     $("#kpis").innerHTML = kp.map(k => `<div class="kpi${filtro.status === k.s && k.s ? " on" : ""}" data-s="${esc(k.s)}" style="border-left-color:${k.cor}"><small>${esc(k.r)}</small><b>${k.v.toLocaleString("pt-BR")}</b></div>`).join("");
     $$("#kpis .kpi").forEach(el => el.addEventListener("click", () => {
       filtro.status = filtro.status === el.dataset.s ? "" : el.dataset.s;
@@ -320,6 +335,7 @@
     $("#tb-veiculos").innerHTML = lista.length ? lista.map(v => `<tr class="clica" data-placa="${esc(v.placa)}" title="Clique para abrir o carro">` +
       CAMPOS.map(f => {
         if (f.c === "placa") return `<td><b>${esc(v.placa)}</b></td>`;
+        if (f.c === "condutor" && ehOficina(v.condutor)) { const d = diasDesde(v.condutor_desde); return `<td><span class="tag-oficina">🔧 ${esc(v.condutor)}</span>${d != null ? `<small class="resp">há ${d} ${d === 1 ? "dia" : "dias"}</small>` : ""}</td>`; }
         if (f.c === "status") return `<td>${v.status ? `<span class="st" style="background:${COR_STATUS(v.status)}">${esc(v.status)}</span>` : "—"}</td>`;
         return `<td${f.t === "num" ? ' class="num"' : ""}>${mostrar(f, v[f.c])}</td>`;
       }).join("") +
@@ -337,8 +353,9 @@
     const rows = TRANS_C[mes].filter(t => noEscopo(t.placa) && ((!g && !ct && !equipeAtiva()) || placas.has(t.placa)));
     const al = alertasTrans(rows);
     const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
-    if (!mais2 && !acima) return "";
-    return `<div class="alerta" data-ir="combustivel" data-acesso="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque em ${nomeMes(mes)}. Clique para ver.</div>`;
+    const ofic = al.reduce((s, a) => s + (a.oficina || 0), 0);
+    if (!mais2 && !acima && !ofic) return "";
+    return `<div class="alerta" data-ir="combustivel" data-acesso="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque${ofic ? ` e <b>${ofic}</b> com o carro na oficina` : ""} em ${nomeMes(mes)}. Clique para ver.</div>`;
   }
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
@@ -364,6 +381,7 @@
       (abertas.length ? `<div class="alerta amarelo" data-ir="ocorrencias">⚠ <b>${abertas.length}</b> ocorrências abertas aguardando tratativa.</div>` : "") + alertaTransInicio(mesAt, placas, g, ct);
     // ao abrir Veículos ou Ocorrências, leva o mesmo filtro
     const levar = destino => {
+      if (destino === "oficina") { filtro.gestor = g; filtro.contrato = ct; $("#f-gestor").value = g; $("#f-contrato").value = ct; filtro.status = "__oficina"; irPara("veiculos"); desenhar(); return; }
       if (destino === "veiculos" || destino === "garagem") {
         filtro.gestor = g; filtro.contrato = ct; $("#f-gestor").value = g; $("#f-contrato").value = ct;
         if (destino === "garagem") { filtro.garagem = "sem"; $("#f-garagem").value = "sem"; }
@@ -373,7 +391,11 @@
       else irPara(destino);
     };
     $$("#ini-alertas .alerta").forEach(a => a.addEventListener("click", () => levar(a.dataset.ir)));
-    const k = [["Veículos", V.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"],
+    const naOficina = V.filter(v => ehOficina(v.condutor));
+    const oficinaLonga = naOficina.filter(v => (diasDesde(v.condutor_desde) || 0) > 7);
+    if (oficinaLonga.length) $("#ini-alertas").insertAdjacentHTML("beforeend", `<div class="alerta amarelo" data-ir="oficina">🔧 <b>${oficinaLonga.length}</b> ${oficinaLonga.length === 1 ? "carro está" : "carros estão"} na oficina há mais de 7 dias.</div>`);
+    $$("#ini-alertas .alerta[data-ir=oficina]").forEach(a => a.addEventListener("click", () => levar("oficina")));
+    const k = [["Veículos", V.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"], ["🔧 Na oficina", naOficina.length, naOficina.length ? "#7c3aed" : "#15803d", "oficina"],
       ["Sem garagem", semGar, semGar ? "#b91c1c" : "#15803d", "garagem"], ["Ocorrências abertas", abertas.length, abertas.length ? "#b45309" : "#15803d", "ocorrencias"],
       ["Multas no mês", multas, multas ? "#b91c1c" : "#15803d", "ocorrencias"], ["Batidas/avarias no mês", batidas, batidas ? "#b45309" : "#15803d", "ocorrencias"],
       ["Trocas de condutor (30 dias)", trocas.length, "#4338ca", "historico"]];
@@ -565,8 +587,11 @@
         <label>Placa<select id="tc-placa">${VEICULOS.map(v => `<option value="${esc(v.placa)}">${esc(v.placa)} — ${esc(v.condutor || "sem condutor")}</option>`).join("")}</select></label>
         <label>Novo condutor<input id="tc-nome" list="dl-pessoas" placeholder="Nome do motorista"></label>
         <label>Está com o carro desde<input id="tc-desde" type="datetime-local" value="${paraInput(new Date())}"></label>
+        <label class="larga">🔧 Ou mandar para a oficina (nome da oficina, opcional)<input id="tc-oficina" placeholder="Ex.: Auto Center Silva"></label>
       </div>
-      <div class="linha-bt"><button class="bt bt-pri" id="tc-salva">Registrar troca</button><span id="tc-msg" class="msg"></span></div>`);
+      <div class="linha-bt"><button class="bt bt-pri" id="tc-salva">Registrar troca</button><button class="bt bt-sec" id="tc-ofi">🔧 Mandar para a oficina</button><span id="tc-msg" class="msg"></span></div>
+      <p class="nota">Quando o carro voltar, é só registrar a troca para o motorista de novo. Os dias parados ficam no histórico.</p>`);
+    $("#tc-ofi").addEventListener("click", () => { const o = $("#tc-oficina").value.trim(); $("#tc-nome").value = "OFICINA" + (o ? " - " + o : ""); $("#tc-salva").click(); });
     $("#tc-salva").addEventListener("click", async () => {
       const nome = $("#tc-nome").value.trim(); if (!nome) return msg($("#tc-msg"), "Digite o nome do novo condutor.", "erro");
       msg($("#tc-msg"), "Gravando…");
@@ -1031,6 +1056,8 @@
   // dias com mais de 2 abastecimentos na mesma placa, ou abastecimento acima do tanque
   function alertasTrans(rows) {
     const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
+    const ofi = periodosOficina();
+    const naOfi = t => { const ps = ofi.get(t.placa); if (!ps) return false; const x = new Date(String(t.data).replace(" ", "T")).getTime(); return ps.some(p => x >= p[0] && x < p[1]); };
     const dias = new Map();
     rows.forEach(t => {
       const k = t.placa + "|" + String(t.data).slice(0, 10);
@@ -1046,8 +1073,10 @@
       const tipos = [];
       if (l.length > 2) tipos.push(`${l.length} abastecimentos no dia`);
       if (acima.length) tipos.push(`${acima.length === 1 ? "1 abastecimento" : acima.length + " abastecimentos"} acima do tanque (${cap} L)`);
+      const naOficina = l.filter(naOfi);
+      if (naOficina.length) tipos.push(`🔧 abasteceu com o carro na oficina (${naOficina.length})`);
       if (!tipos.length) return;
-      out.push({ dia: k.split("|")[1], placa: l[0].placa, modelo, cap, itens: l, n: l.length, acima: acima.length, tipos,
+      out.push({ dia: k.split("|")[1], placa: l[0].placa, modelo, cap, itens: l, n: l.length, acima: acima.length, oficina: naOficina.length, tipos,
         motoristas: Array.from(new Set(l.map(t => t.motorista || t.responsavel).filter(Boolean))),
         litros: l.reduce((a, t) => a + n0(numBR(t.litros)), 0), valor: l.reduce((a, t) => a + n0(numBR(t.valor)), 0) });
     });
@@ -1072,7 +1101,7 @@
     const al = alertasTrans(rows);
     const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
     $("#cb-trans-info").textContent = `${nomeMes(mes)} · ${rows.length} abastecimentos · ${fmtN(rows.reduce((s, t) => s + n0(numBR(t.litros)), 0))} litros`;
-    $("#cb-trans-kpis").innerHTML = `<span class="chip vermelho">🔴 ${mais2} ${mais2 === 1 ? "dia" : "dias"} com mais de 2 abastecimentos</span><span class="chip laranja">🟠 ${acima} acima do tanque</span>`;
+    $("#cb-trans-kpis").innerHTML = `<span class="chip vermelho">🔴 ${mais2} ${mais2 === 1 ? "dia" : "dias"} com mais de 2 abastecimentos</span><span class="chip laranja">🟠 ${acima} acima do tanque</span>` + (al.some(a => a.oficina) ? `<span class="chip roxo">🔧 ${al.reduce((s, a) => s + (a.oficina || 0), 0)} com o carro na oficina</span>` : "");
     $("#tb-trans").innerHTML = al.slice(0, 500).map(a => `<tr class="${a.n > 2 ? "tem-alerta" : ""}">
       <td>${a.dia.split("-").reverse().join("/")}</td><td><b>${esc(a.placa)}</b><small class="resp">${esc(a.modelo)}</small></td>
       <td class="cond">${esc(a.motoristas.join(" / ") || "—")}</td><td class="num"><b>${a.n}</b></td><td class="num">${fmtN(a.litros, 2)}</td><td class="num">${fmtN(a.valor, 2)}</td>
