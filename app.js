@@ -1509,9 +1509,9 @@
     });
     if (!regs.length) return msg(el, "Nenhuma transação com placa e data na planilha.", "erro");
     let novos = 0, rep = 0;
-    for (let i = 0; i < regs.length; i += 800) {
-      msg(el, `Enviando transações ${i + 1} a ${Math.min(i + 800, regs.length)} de ${regs.length}…`);
-      const r = await api("subir_transacoes", { regs: regs.slice(i, i + 800) });
+    for (let i = 0; i < regs.length; i += 500) {
+      msg(el, `Enviando transações ${i + 1} a ${Math.min(i + 500, regs.length)} de ${regs.length}…`);
+      const r = await api("subir_transacoes", { regs: regs.slice(i, i + 500) });
       novos += (r.r && r.r.novos) || 0; rep += (r.r && r.r.repetidas) || 0;
     }
     const meses = Array.from(new Set(regs.map(r => r.mes)));
