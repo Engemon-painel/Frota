@@ -633,6 +633,9 @@
       const iPlaca = cs.indexOf("placa");
       const iData = cs.findIndex(c => c === "data" || c.startsWith("data da") || c.startsWith("data do") || c.startsWith("data/hora") || c.startsWith("data e hora") || c.startsWith("data"));
       const iHora = cs.findIndex(c => c === "hora" || c.startsWith("hora da") || c.startsWith("hora do"));
+      // valor da multa: coluna com "valor" (de preferência "valor da multa"), "vlr" ou "R$"
+      let iValor = cs.findIndex(c => /valor|vlr/.test(c) && /multa|infra/.test(c));
+      if (iValor < 0) iValor = cs.findIndex(c => /^valor|^vlr|r\$/.test(c) && !/desconto|pago|juros/.test(c));
       const linhas = m.slice(r + 1).filter(l => String(l[iPlaca] || "").trim());
       let achou = 0, semData = 0;
       const quando = [], cond = [];
@@ -644,17 +647,35 @@
         if (!d) semData++; else if (c) achou++;
         cond.push(c);
       });
-      CZ = { cab, linhas, iPlaca, iData, quando, cond };
-      $("#cz-cab").innerHTML = "<tr>" + cab.map(c => `<th>${esc(c)}</th>`).join("") + '<th style="background:#dcfce7">Condutor no dia</th></tr>';
+      // condutor atual (base de veículos) e reincidência: placa com 2+ multas na base, ou que já tinha multa registrada
+      const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
+      const placaDe = l => String(l[iPlaca]).toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const naBase = {}; linhas.forEach(l => { const p = placaDe(l); naBase[p] = (naBase[p] || 0) + 1; });
+      const antes = {}; TODOS.ocor.filter(o => o.tipo === "Multa").forEach(o => { antes[o.placa] = (antes[o.placa] || 0) + 1; });
+      const condBase = linhas.map(l => (veic.get(placaDe(l)) || {}).condutor || "");
+      const valores = linhas.map(l => iValor >= 0 ? n0(numBR(l[iValor])) : 0);
+      const alertas = linhas.map(l => { const p = placaDe(l), n = naBase[p], a = antes[p] || 0;
+        return n >= 2 ? `⚠ Reincidente: ${n} multas nesta base` + (a ? ` (+${a} já registradas)` : "") : a ? `⚠ Reincidente: já tinha ${a} ${a === 1 ? "multa registrada" : "multas registradas"}` : ""; });
+      CZ = { cab, linhas, iPlaca, iData, quando, cond, condBase, valores, alertas, iValor };
+      const reinc = Object.keys(naBase).filter(p => naBase[p] >= 2 || antes[p]);
+      const tot = valores.reduce((a, v) => a + v, 0);
+      const kp = (t, v, c) => `<div class="kpi" style="border-left-color:${c}"><small>${t}</small><b>${v}</b></div>`;
+      $("#cz-kpis").innerHTML = kp("Valor das multas", iValor >= 0 ? "R$ " + fmtN(tot, 2) : "sem coluna de valor", "#b91c1c") + kp("Multas na base", linhas.length.toLocaleString("pt-BR"), "#0e7c86")
+        + kp("Placas reincidentes", reinc.length, reinc.length ? "#b91c1c" : "#15803d") + kp("Condutor identificado no dia", `${achou} de ${linhas.length}`, "#4338ca")
+        + (reinc.length ? `<div class="alerta" style="grid-column:1/-1;cursor:default">⚠ <b>${reinc.length}</b> ${reinc.length === 1 ? "placa reincidente" : "placas reincidentes"}: ${reinc.slice(0, 12).map(p => `${esc(p)} (${naBase[p] + (antes[p] || 0)}x${(veic.get(p) || {}).condutor ? " · " + esc(veic.get(p).condutor) : ""})`).join(", ")}${reinc.length > 12 ? "…" : ""}</div>` : "");
+      $("#cz-cab").innerHTML = "<tr>" + cab.map(c => `<th>${esc(c)}</th>`).join("") + '<th style="background:#dcfce7">Condutor no dia</th><th style="background:#e0f2fe">Condutor na base de veículos</th><th style="background:#fee2e2">Alerta</th></tr>';
       const fmt = v => v instanceof Date ? v.toLocaleString("pt-BR") : esc(v);
       $("#tb-cruzar").innerHTML = linhas.map((l, i) => "<tr>" + cab.map((_, j) => `<td>${fmt(l[j])}</td>`).join("") +
-        `<td style="font-weight:800;background:#f0fdf4">${cond[i] ? esc(cond[i]) : '<span style="color:#b91c1c">não identificado</span>'}</td></tr>`).join("");
+        `<td style="font-weight:800;background:#f0fdf4">${cond[i] ? esc(cond[i]) : '<span style="color:#b91c1c">não identificado</span>'}</td>` +
+        `<td style="font-weight:700;background:#f0f9ff">${condBase[i] ? esc(condBase[i]) : '<span class="info">placa fora da base</span>'}</td>` +
+        `<td style="color:#b91c1c;font-weight:800;white-space:normal;min-width:180px">${esc(alertas[i])}</td></tr>`).join("");
+      $$("#tb-cruzar tr").forEach((tr, i) => { if (alertas[i]) tr.classList.add("tem-alerta"); });
       msg(el, `✓ ${linhas.length} linhas · condutor identificado em ${achou}` + (linhas.length - achou - semData ? ` · ${linhas.length - achou - semData} sem condutor registrado na data (ou placa fora da sua equipe)` : "") + (semData ? ` · ${semData} sem data válida` : ""), "ok");
       ["#bt-cruzar-exp", "#bt-cruzar-ocor", "#cz-tipo"].forEach(id => { $(id).hidden = false; });
     } catch (err) { msg(el, "Erro ao ler a base: " + (err.message || err), "erro"); }
   });
   $("#bt-cruzar-exp").addEventListener("click", () => {
-    const aoa = [CZ.cab.concat("Condutor no dia")].concat(CZ.linhas.map((l, i) => CZ.cab.map((_, j) => l[j]).concat(CZ.cond[i] || "não identificado")));
+    const aoa = [CZ.cab.concat("Condutor no dia", "Condutor na base de veículos", "Alerta")].concat(CZ.linhas.map((l, i) => CZ.cab.map((_, j) => l[j]).concat(CZ.cond[i] || "não identificado", CZ.condBase[i] || "", CZ.alertas[i] || "")));
     const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "dd/mm/yyyy hh:mm" });
     XLSX.utils.book_append_sheet(wb, ws, "Com condutor"); XLSX.writeFile(wb, "Base com condutor no dia.xlsx");
   });
