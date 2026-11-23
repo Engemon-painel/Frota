@@ -355,3 +355,5 @@ body.sem-inicio [data-acesso~="inicio"]{display:none!important}
 .tab-al tr.det-al td{background:#f8fafc;font-size:12px;white-space:normal}
 .tab-rank .var-mais{color:#b91c1c;font-weight:800}.tab-rank .var-menos{color:#1d4ed8;font-weight:700}.tab-rank .ant{color:#1d4ed8}
 .tab-al td.modelo{white-space:normal;min-width:90px;font-size:12px}.tab-al td.comb-txt{white-space:normal;min-width:90px;font-size:12px}
+.tab-rank th,.tab-rank td{padding-left:8px!important;padding-right:8px!important}
+.tab-rank td.barra-fundo{background-clip:padding-box}
