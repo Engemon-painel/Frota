@@ -108,13 +108,13 @@
         <div class="sub">
           <button class="ms" data-acao="trocar" data-acesso="trocar">Trocar condutor</button>
           <button class="ms aba" data-aba="historico" data-acesso="historico">Histórico de uso</button>
-          <button class="ms aba" data-aba="ocorrencias" data-acesso="ocorrencias">Ocorrências</button>
+          <button class="ms aba" data-aba="ocorrencias" data-acesso="ocorrencias">Ocorrências (batidas)</button>
         </div>
       </div>
       <div class="grupo aberto">
         <div class="sec">Relatórios</div>
         <div class="sub">
-          <button class="ms aba" data-aba="cruzar" data-acesso="multas">Multas e batidas</button>
+          <button class="ms aba" data-aba="cruzar" data-acesso="multas">Multas</button>
           <button class="ms aba" data-aba="combustivel" data-acesso="combustivel">Consumo de combustível</button>
           <button class="ms" data-acao="exportar" data-acesso="exportar">Exportar Excel</button>
         </div>
@@ -213,12 +213,12 @@
 
       <!-- MULTAS E BATIDAS: cruzar uma base com o histórico -->
       <div id="aba-cruzar" class="aba-conteudo" hidden>
-        <div class="linha-titulo"><h1>Multas e batidas</h1>
+        <div class="linha-titulo"><h1>Multas</h1>
           <div class="acoes"><label class="bt bt-pri" for="arq-cruzar">⬆ Subir base (Excel)</label><input id="arq-cruzar" type="file" accept=".xlsx,.xls,.csv" hidden>
           <button class="bt bt-sec" id="bt-cruzar-exp" hidden>⬇ Baixar com o condutor</button>
           <select id="cz-tipo" hidden><option>Multa</option><option>Batida</option><option>Avaria</option><option>Outro</option></select>
           <button class="bt bt-sec" id="bt-cruzar-ocor" hidden>Registrar como ocorrências</button></div></div>
-        <p class="nota">Planilha com as colunas <b>Placa</b> e <b>Data</b>.</p>
+        <p class="nota">Suba a base de multas (colunas <b>Placa</b> e <b>Data</b>). Batidas e avarias são registradas em <b>Ocorrências</b>.</p>
         <p id="cz-msg" class="msg"></p>
         <div class="kpis" id="cz-kpis"></div>
         <div class="faixas" id="cz-faixas"></div>
@@ -354,6 +354,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=47"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>
