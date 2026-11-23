@@ -349,3 +349,4 @@ body.sem-inicio [data-acesso~="inicio"]{display:none!important}
 .tab-rank td.barra-fundo{background:linear-gradient(90deg,var(--c) var(--p),transparent var(--p))}
 .tab-rank th[data-k]{cursor:pointer}.tab-rank th.ord{color:#0f62fe}.tab-rank th.ord::after{content:" ▼"}
 .tab-rank-caixa{max-height:78vh}
+.tab-rank td.comb-txt{white-space:normal;min-width:110px;font-size:12px}
