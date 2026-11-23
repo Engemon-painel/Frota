@@ -1227,7 +1227,14 @@
       if (n.kmInv) olhar.push(`km inválido em ${n.kmInv}`);
       if (n.oficina) olhar.push(`${n.oficina} com o carro na oficina`);
       const vs = l.map(a => veic.get(a.t.placa) || {});
-      out.push(Object.assign({ nome, gestor: maisFrequente(vs.map(v => v.gestor_operacao)), contrato: maisFrequente(vs.map(v => v.operacao)), abast: l.length, comAlerta: comAlerta.length,
+      // modelo e combustível vêm das colunas MODELO VEICULO e TIPO COMBUSTIVEL da base de transações
+      const modelos = Array.from(new Set(l.map((a, i) => String(a.t.modelo || vs[i].modelo || "").trim().toUpperCase()).filter(Boolean)));
+      const litT = l.reduce((s2, a) => s2 + a.l, 0), porC = {};
+      l.forEach(a => { const cb = String(a.t.combustivel || "").trim().toUpperCase() || "NÃO INFORMADO"; porC[cb] = (porC[cb] || 0) + a.l; });
+      const cbs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]);
+      const cap = x => x.charAt(0) + x.slice(1).toLowerCase();
+      const combTxt = cbs.map(c2 => cbs.length > 1 && litT ? `${cap(c2)} ${Math.round(porC[c2] / litT * 100)}%` : cap(c2)).join(" · ");
+      out.push(Object.assign({ nome, modelo: modelos.join(" / "), combTxt, gestor: maisFrequente(vs.map(v => v.gestor_operacao)), contrato: maisFrequente(vs.map(v => v.operacao)), abast: l.length, comAlerta: comAlerta.length,
         pontos, kml: litV ? kmV / litV : null, gasto: l.reduce((s, a) => s + n0(numBR(a.t.valor)), 0), gastoAlerta: comAlerta.reduce((s, a) => s + n0(numBR(a.t.valor)), 0),
         olhar: olhar.join("; "), hodo, itens: l }, n));
     });
@@ -1419,19 +1426,19 @@
     l.sort((a, b) => vv(b, fal.ord) - vv(a, fal.ord));
     const maxP = Math.max(1, ...l.map(x => x.pontos));
     const th = (k, t) => `<th class="num${fal.ord === k ? " ord" : ""}" data-k="${k}">${t}</th>`;
-    $("#al-cab").innerHTML = `<tr><th class="num">#</th><th>Condutor</th><th>Gestor</th>${th("abast", "Abast.")}${th("comAlerta", "Abast. c/ alerta")}${th("consumo", "Consumo &lt; 5 km/l")}${th("kmInv", "Km inválido")}
+    $("#al-cab").innerHTML = `<tr><th class="num">#</th><th>Condutor</th><th>Gestor</th><th>Modelo</th><th>Combustível</th>${th("abast", "Abast.")}${th("comAlerta", "Abast. c/ alerta")}${th("consumo", "Consumo &lt; 5 km/l")}${th("kmInv", "Km inválido")}
       ${th("dia2", "2+ no dia")}${th("l80", "&gt; 80 L")}${th("preco", "Preço alto")}${th("aditivado", "Aditivado")}${th("pontos", "Pontos")}${th("kml", "Km/l")}${th("gasto", "Valor gasto")}${th("gastoAlerta", "Valor c/ alerta")}<th>O que olhar</th></tr>`;
     $$("#al-cab th[data-k]").forEach(h => h.addEventListener("click", () => { fal.ord = h.dataset.k; desenharAlertasComb(); }));
     const n0s = v => v ? `<b style="color:#b91c1c">${v}</b>` : "-";
     $("#al-info").textContent = `${nomeMes(fal.mes)} · ${l.length} condutores`;
-    $("#tb-al").innerHTML = l.map((x, i) => `<tr class="clica${x.comAlerta ? " tem-alerta" : ""}" data-nome="${esc(x.nome)}"><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.gestor)}</td>
+    $("#tb-al").innerHTML = l.map((x, i) => `<tr class="clica${x.comAlerta ? " tem-alerta" : ""}" data-nome="${esc(x.nome)}"><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.gestor)}</td><td class="modelo">${esc(x.modelo)}</td><td class="comb-txt">${esc(x.combTxt)}</td>
       <td class="num">${x.abast}</td><td class="num">${n0s(x.comAlerta)}</td><td class="num">${n0s(x.consumo)}</td><td class="num">${n0s(x.kmInv)}</td><td class="num">${n0s(x.dia2)}</td>
       <td class="num">${n0s(x.l80)}</td><td class="num">${n0s(x.preco)}</td><td class="num">${n0s(x.aditivado)}</td>
       <td class="num pontos barra-fundo" style="--p:${x.pontos / maxP * 100}%;--c:#fdba74">${fmtN(x.pontos, 1)}</td><td class="num">${fmtN(x.kml, 2)}</td>
       <td class="num">R$ ${fmtN(x.gasto, 2)}</td><td class="num">R$ ${fmtN(x.gastoAlerta, 2)}</td><td class="olhar">${esc(x.olhar)}</td></tr>`
-      + (fal.aberto === x.nome ? `<tr class="det-al"><td></td><td colspan="15">${x.itens.filter(a => a.alerta || a.hodo).sort((a, b) => String(a.t.data).localeCompare(String(b.t.data))).map(a =>
-        `${esc(String(a.t.data).slice(8, 10) + "/" + String(a.t.data).slice(5, 7) + " " + String(a.t.data).slice(11, 16))} · <b>${esc(a.t.placa)}</b> · ${fmtN(a.l, 2)} L · ${fmtN(a.km)} km (${fmtN(a.kml, 2)} km/l) · R$ ${fmtN(a.preco, 2)}/L · ${esc(a.t.estabelecimento || "")} ${esc(a.t.uf || "")} → <b style="color:#b91c1c">${Object.keys(a.f).filter(k => a.f[k]).map(k => NOMES_ALERTA[k]).concat(a.hodo ? ["hodômetro fixo"] : []).join(", ")}</b>`).join("<br>")}</td></tr>` : "")).join("")
-      || '<tr><td colspan="16" class="info">Nenhum condutor com alerta nesse filtro. 👍</td></tr>';
+      + (fal.aberto === x.nome ? `<tr class="det-al"><td></td><td colspan="17">${x.itens.filter(a => a.alerta || a.hodo).sort((a, b) => String(a.t.data).localeCompare(String(b.t.data))).map(a =>
+        `${esc(String(a.t.data).slice(8, 10) + "/" + String(a.t.data).slice(5, 7) + " " + String(a.t.data).slice(11, 16))} · <b>${esc(a.t.placa)}</b> ${esc(a.t.modelo || "")} · ${esc(a.t.combustivel || "")} · ${fmtN(a.l, 2)} L · ${fmtN(a.km)} km (${fmtN(a.kml, 2)} km/l) · R$ ${fmtN(a.preco, 2)}/L · ${esc(a.t.estabelecimento || "")} ${esc(a.t.uf || "")} → <b style="color:#b91c1c">${Object.keys(a.f).filter(k => a.f[k]).map(k => NOMES_ALERTA[k]).concat(a.hodo ? ["hodômetro fixo"] : []).join(", ")}</b>`).join("<br>")}</td></tr>` : "")).join("")
+      || '<tr><td colspan="18" class="info">Nenhum condutor com alerta nesse filtro. 👍</td></tr>';
     AL_ATUAL = { mes: fal.mes, l };
   }
   $("#tb-al").addEventListener("click", e => { const tr = e.target.closest("tr[data-nome]"); if (!tr) return; fal.aberto = fal.aberto === tr.dataset.nome ? "" : tr.dataset.nome; desenharAlertasComb(); });
@@ -1444,11 +1451,11 @@
     if (!AL_ATUAL) return;
     const r2 = v => v == null ? null : Math.round(v * 100) / 100;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(AL_ATUAL.l.map((x, i) => ({ "#": i + 1, "Condutor": x.nome, "Gestor": x.gestor, "Abast.": x.abast, "Abast. c/ alerta": x.comAlerta,
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(AL_ATUAL.l.map((x, i) => ({ "#": i + 1, "Condutor": x.nome, "Gestor": x.gestor, "Modelo": x.modelo, "Combustível": x.combTxt, "Abast.": x.abast, "Abast. c/ alerta": x.comAlerta,
       "Consumo < 5 km/l": x.consumo, "Km inválido": x.kmInv, "2+ no dia": x.dia2, "> 80 L": x.l80, "Preço alto": x.preco, "Aditivado": x.aditivado, "Pontos": r2(x.pontos), "Km/l": r2(x.kml),
       "Valor gasto": r2(x.gasto), "Valor c/ alerta": r2(x.gastoAlerta), "O que olhar": x.olhar }))), "Por condutor");
     const det = [];
-    AL_ATUAL.l.forEach(x => x.itens.filter(a => a.alerta || a.hodo).forEach(a => det.push({ "Data": a.t.data, "Condutor": x.nome, "Placa": a.t.placa, "Combustível": a.t.combustivel, "Litros": r2(a.l),
+    AL_ATUAL.l.forEach(x => x.itens.filter(a => a.alerta || a.hodo).forEach(a => det.push({ "Data": a.t.data, "Condutor": x.nome, "Placa": a.t.placa, "Modelo": a.t.modelo, "Combustível": a.t.combustivel, "Litros": r2(a.l),
       "Km rodado": a.km, "Km/l": r2(a.kml), "R$/litro": r2(a.preco), "Mediana R$/litro (combustível + UF)": r2(a.medPreco), "Valor": r2(n0(numBR(a.t.valor))), "Posto": a.t.estabelecimento, "UF": a.t.uf,
       "Alertas": Object.keys(a.f).filter(k => a.f[k]).map(k => NOMES_ALERTA[k]).concat(a.hodo ? ["hodômetro fixo"] : []).join(", ") })));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det.length ? det : [{ "Data": "" }]), "Abastecimentos com alerta");
