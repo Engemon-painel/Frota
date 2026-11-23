@@ -343,3 +343,9 @@ body.sem-inicio [data-acesso~="inicio"]{display:none!important}
 @media (min-width:901px){.menu-x{display:none}}
 @media (max-width:900px){.menu{margin-top:0;top:0;height:100vh;z-index:40}}
 @media (min-width:901px){.menu .menu-x{display:none}.topo{padding-left:236px}}
+
+/* gasto x km por técnico */
+.tab-rank{font-size:12.5px}.tab-rank th{white-space:normal;font-size:10.5px;vertical-align:bottom}.tab-rank td{padding:5px 8px}
+.tab-rank td.barra-fundo{background:linear-gradient(90deg,var(--c) var(--p),transparent var(--p))}
+.tab-rank th[data-k]{cursor:pointer}.tab-rank th.ord{color:#0f62fe}.tab-rank th.ord::after{content:" ▼"}
+.tab-rank-caixa{max-height:78vh}
