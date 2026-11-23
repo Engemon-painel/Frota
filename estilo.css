@@ -350,3 +350,7 @@ body.sem-inicio [data-acesso~="inicio"]{display:none!important}
 .tab-rank th[data-k]{cursor:pointer}.tab-rank th.ord{color:#0f62fe}.tab-rank th.ord::after{content:" ▼"}
 .tab-rank-caixa{max-height:78vh}
 .tab-rank td.comb-txt{white-space:normal;min-width:110px;font-size:12px}
+.tab-al td.olhar{white-space:normal;min-width:300px;font-size:12px;color:#7c2d12}
+.tab-al td.pontos{font-weight:800}
+.tab-al tr.det-al td{background:#f8fafc;font-size:12px;white-space:normal}
+.tab-rank .var-mais{color:#b91c1c;font-weight:800}.tab-rank .var-menos{color:#1d4ed8;font-weight:700}.tab-rank .ant{color:#1d4ed8}
