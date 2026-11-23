@@ -229,8 +229,44 @@
   // ------------------------------------------------------------------ abas
   // menu lateral: grupos abrem/fecham; itens com data-aba trocam a tela; data-acao executa
   $$(".mg").forEach(b => b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
-  $("#bt-menu").addEventListener("click", () => document.body.classList.toggle("menu-aberto"));
-  $("#menu-x").addEventListener("click", () => document.body.classList.remove("menu-aberto"));
+  // ícone antes de cada item do menu
+  const ICO = {
+    inicio: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+    veiculos: '<path d="M5 16l1.5-5.5A2 2 0 0 1 8.4 9h7.2a2 2 0 0 1 1.9 1.5L19 16"/><rect x="3" y="16" width="18" height="4" rx="1"/><circle cx="7.5" cy="20" r="1.5"/><circle cx="16.5" cy="20" r="1.5"/>',
+    "nova-placa": '<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M12 9.5v5M9.5 12h5"/>',
+    usuarios: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5a3 3 0 0 1 0 6M18 14c2 .8 3 2.8 3 6"/>',
+    carga: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v4h16v-4"/>',
+    hierarquia: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-4h12v4"/>',
+    organograma: '<circle cx="12" cy="6" r="3"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/><path d="M17 11l2 2 3-3"/>',
+    trocar: '<path d="M4 7h13l-3-3M20 17H7l3 3"/>',
+    historico: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    ocorrencias: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+    cruzar: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+    combustivel: '<rect x="4" y="4" width="10" height="16" rx="1"/><path d="M4 10h10M14 8l4 3v7a2 2 0 0 1-4 0v-3"/>',
+    exportar: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/>'
+  };
+  $$("#menu .mi, #menu .ms").forEach(b => {
+    const k = b.dataset.aba || b.dataset.acao || "";
+    const txt = b.textContent.trim();
+    b.title = txt;
+    b.innerHTML = `<i class="mi-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICO[k] || ICO.inicio}</svg></i><span class="mi-txt">${esc(txt)}</span>`;
+  });
+  // ☰: no celular abre/fecha o menu por cima; no computador esconde/mostra o menu (e lembra a escolha)
+  try { if (localStorage.getItem("frotaMenuFechado") === "1") document.body.classList.add("menu-fechado"); } catch (e) { }
+  $("#bt-menu").addEventListener("click", () => {
+    if (window.innerWidth > 900) {
+      const f = document.body.classList.toggle("menu-fechado");
+      try { localStorage.setItem("frotaMenuFechado", f ? "1" : "0"); } catch (e) { }
+      if (window.Chart && GRAF) setTimeout(() => GRAF.resize(), 50);
+    } else document.body.classList.toggle("menu-aberto");
+  });
+  $("#menu-x").addEventListener("click", () => {
+    if (window.innerWidth > 900) {
+      const f = document.body.classList.toggle("menu-fechado");
+      try { localStorage.setItem("frotaMenuFechado", f ? "1" : "0"); } catch (e) { }
+      if (window.Chart && GRAF) setTimeout(() => GRAF.resize(), 50);
+    } else document.body.classList.remove("menu-aberto");
+  });
   $$(".menu [data-acao]").forEach(b => b.addEventListener("click", () => {
     document.body.classList.remove("menu-aberto");
     const a = b.dataset.acao;
