@@ -251,3 +251,5 @@ body.sem-exportar [data-acesso~="exportar"]{display:none!important}
 .form-user .acessos input[type=checkbox]{min-width:0;width:16px;height:16px;padding:0;margin:0}
 .acessos label{width:190px}
 body.sem-inicio [data-acesso~="inicio"]{display:none!important}
+.tag-oficina{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:999px;padding:2px 10px;font-weight:800;font-size:12.5px}
+.chip.roxo{background:#ede9fe;color:#5b21b6}
