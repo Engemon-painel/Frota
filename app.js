@@ -145,6 +145,7 @@
     TODOS.comb = (d.combustivel || []).filter(x => x.placa && x.mes);
     EXTRATO = d.extrato || [];
     TODOS.cart = (d.cartoes || []).filter(x => x.cartao || x.placa);
+    TRAT_M = new Map((d.multas_trat || []).filter(m => m.chave).map(m => [String(m.chave), m]));
     filtrarEquipe();
     if (primeiro) {
       $("#user-nome").textContent = EU.nome;
@@ -152,6 +153,8 @@
       $$("[data-so-admin]").forEach(el => { el.hidden = EU.perfil !== "admin"; });
       $$("[data-so-gerente]").forEach(el => { el.hidden = EU.perfil !== "admin" && EU.perfil !== "gerente"; });
       aplicarAcessos();
+      let ult = ""; try { ult = localStorage.getItem("frotaAba_v1") || ""; } catch (e) { }
+      if (ult && document.getElementById("aba-" + ult)) setTimeout(() => irPara(ult), 0);
       $("#tela-login").hidden = true; $("#tela-app").hidden = false;
     }
     redesenharTudo();
@@ -166,6 +169,7 @@
     if (!$("#h-q-data").value) $("#h-q-data").value = paraInput(new Date());
     $("#dl-pessoas").innerHTML += Array.from(new Set(HIST.map(h => h.condutor))).map(c => `<option value="${esc(c)}">`).join("");
     desenharOcorrencias(); desenharHistorico(); desenharInicio();
+    if (!CZ.linhas.length) montarMultasSalvas(); else pintarTrat();
     montarFiltrosComb(); desenharComb(); desenharHier();
     if (EU.perfil === "admin") desenharUsuarios();
   }
@@ -296,6 +300,31 @@
     return "#475569";
   };
 
+  // lista de status para escolher (os padrões + os que já existem na base)
+  const STATUS_PADRAO = ["Ativo", "Manutenção", "Funilaria", "Disponível", "Devolvido"];
+  function opcoesStatus(atual) {
+    const l = STATUS_PADRAO.slice();
+    VEICULOS.forEach(v => { const s = String(v.status || "").trim(); if (s && !l.some(x => sem(x) === sem(s))) l.push(s); });
+    const at = l.find(x => sem(x) === sem(atual || "")) || atual;
+    if (at && l.indexOf(at) < 0) l.unshift(at);
+    return l.map(s => `<option ${s === at ? "selected" : ""}>${esc(s)}</option>`).join("");
+  }
+  function trocarStatus(placa) {
+    const v = VEICULOS.find(x => x.placa === placa); if (!v) return;
+    abrirModal(`<h2>Status · ${esc(v.placa)}</h2>
+      <p style="margin:0 0 10px">${esc([v.marca, v.modelo].filter(Boolean).join(" "))} · condutor: <b>${esc(v.condutor) || "—"}</b></p>
+      <p style="margin:0 0 10px">Status atual: ${v.status ? `<span class="st" style="background:${COR_STATUS(v.status)}">${esc(v.status)}</span>` : "—"}</p>
+      <div class="linha-bt"><select id="ts-status">${opcoesStatus(v.status)}</select>
+        <button class="bt bt-pri" id="ts-salva">Alterar status</button><span id="ts-msg" class="msg"></span></div>`);
+    $("#ts-salva").addEventListener("click", async () => {
+      const st = $("#ts-status").value;
+      if (st === v.status) return msg($("#ts-msg"), "O carro já está com esse status.", "erro");
+      msg($("#ts-msg"), "Gravando…");
+      try { await api("salvar_status", { placa: v.placa, status: st }); fecharModal(); }
+      catch (err) { msg($("#ts-msg"), err.message, "erro"); }
+    });
+  }
+
   function opcoes(sel, valores, primeiro) {
     const atual = sel.value;
     sel.innerHTML = `<option value="">${esc(primeiro)}</option>` + valores.map(v => `<option>${esc(v)}</option>`).join("");
@@ -376,7 +405,7 @@
       CAMPOS.map(f => {
         if (f.c === "placa") return `<td><b>${esc(v.placa)}</b></td>`;
         if (f.c === "condutor" && ehOficina(v.condutor)) { const d = diasDesde(v.condutor_desde); return `<td><span class="tag-oficina">🔧 ${esc(v.condutor)}</span>${d != null ? `<small class="resp">há ${d} ${d === 1 ? "dia" : "dias"}</small>` : ""}</td>`; }
-        if (f.c === "status") return `<td>${v.status ? `<span class="st" style="background:${COR_STATUS(v.status)}">${esc(v.status)}</span>` : "—"}</td>`;
+        if (f.c === "status") return `<td><span class="st st-troca" data-st="${esc(v.placa)}" title="Clique para alterar o status" style="background:${v.status ? COR_STATUS(v.status) : "#94a3b8"}">${esc(v.status) || "definir"} ▾</span></td>`;
         return `<td${f.t === "num" ? ' class="num"' : ""}>${mostrar(f, v[f.c])}</td>`;
       }).join("") +
       `<td>${esc(v.coordenador) || '<span style="color:#b45309;font-weight:700">preencher</span>'}</td>
@@ -385,7 +414,10 @@
       : `<tr><td colspan="${CAMPOS.length + 3}" style="text-align:center;color:#475569;padding:24px">${VEICULOS.length ? "Nenhum veículo com esses filtros." : (EU && EU.perfil === "admin" ? "Nenhum veículo ainda. Clique em Carga inicial (planilha) para trazer a base de hoje, ou em + Nova placa." : "Nenhum veículo da sua equipe cadastrado ainda.")}</td></tr>`;
   }
 
-  $("#tb-veiculos").addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr) abrirVeiculo(tr.dataset.placa); });
+  $("#tb-veiculos").addEventListener("click", e => {
+    const st = e.target.closest("[data-st]"); if (st) { trocarStatus(st.dataset.st); return; }
+    const tr = e.target.closest("tr[data-placa]"); if (tr) abrirVeiculo(tr.dataset.placa);
+  });
 
   // ------------------------------------------------------------------ início (resumo)
   function alertaTransInicio(mes, placas, g, ct) {
@@ -476,6 +508,7 @@
     const bt = document.querySelector(`#menu [data-aba="${aba}"]`);
     const nome = bt ? bt.textContent.trim() : "Início";
     $("#topo-titulo").textContent = nome; document.title = nome + " · Frota";
+    try { localStorage.setItem("frotaAba_v1", aba); } catch (e) { }   // ao atualizar a página, volta para a mesma tela
     if (aba === "rank") desenharRanking();
     if (aba === "alertas") desenharAlertasComb();
   }
@@ -494,8 +527,11 @@
     abrirModal(`<h2>${esc(v.placa)} · ${esc([v.marca, v.modelo].filter(Boolean).join(" "))}</h2>
       <div class="dados">
         <div><small>Contrato</small>${esc(v.operacao) || "—"}</div><div><small>Gestor operação</small>${esc(v.gestor_operacao) || "—"}</div>
-        <div><small>Status</small>${esc(v.status) || "—"}</div><div><small>Tipo</small>${esc(v.tipo) || "—"}</div>
+        <div><small>Status</small>${v.status ? `<span class="st" style="background:${COR_STATUS(v.status)}">${esc(v.status)}</span>` : "—"}</div><div><small>Tipo</small>${esc(v.tipo) || "—"}</div>
       </div>
+      <h3>Status</h3>
+      <div class="linha-bt"><select id="m-status">${opcoesStatus(v.status)}</select>
+        <button class="bt bt-pri" id="m-salva-status">Alterar status</button><span id="m-msg-st" class="msg"></span></div>
       ${EU.perfil === "admin" ? `<h3>Dados do veículo</h3>${camposVeiculo(v, false)}
       <div class="linha-bt"><button class="bt bt-pri" id="m-salva-dados">Salvar dados do veículo</button><span id="m-msg0" class="msg"></span></div>` : ""}
       <h3>Condutor</h3>
@@ -526,6 +562,13 @@
       const r = lerCamposVeiculo(false); if (typeof r === "string") return msg($("#m-msg0"), r, "erro");
       try { await api("salvar_veiculo", { dados: Object.assign({ placa: v.placa }, r) }); msg($("#m-msg0"), "✓ Salvo", "ok"); }
       catch (err) { msg($("#m-msg0"), err.message, "erro"); }
+    });
+    $("#m-salva-status").addEventListener("click", async () => {
+      const st = $("#m-status").value;
+      if (st === v.status) return msg($("#m-msg-st"), "O carro já está com esse status.", "erro");
+      msg($("#m-msg-st"), "Gravando…");
+      try { await api("salvar_status", { placa: v.placa, status: st }); abrirVeiculo(v.placa); }
+      catch (err) { msg($("#m-msg-st"), err.message, "erro"); }
     });
     $("#m-salva-condutor").addEventListener("click", async () => {
       const nome = $("#m-condutor").value.trim(), desde = $("#m-desde").value;
@@ -647,7 +690,63 @@
   });
 
   // ------------------------------------------------------------------ multas e batidas: cruza a base com o histórico
-  let CZ = { cab: [], linhas: [], iPlaca: -1, quando: [] };
+  let CZ = { cab: [], linhas: [], iPlaca: -1, quando: [], chaves: [], sit: "" };
+  let TRAT_M = new Map();   // tratativa das multas gravada na planilha (chave → situação, datas, observação)
+  const SIT_COR = { "Não tratada": "#b91c1c", "Em tratativa": "#b45309", "Tratada": "#15803d" };
+  const dataCurta = s => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
+  const situacaoDe = i => { const t = TRAT_M.get(CZ.chaves[i]); return (t && t.situacao) || "Não tratada"; };
+  function celTrat(i) {
+    const t = TRAT_M.get(CZ.chaves[i]) || {}, s = situacaoDe(i);
+    const datas = [t.data_envio ? "enviada " + dataCurta(t.data_envio) : "", t.data_tratativa ? "tratada " + dataCurta(t.data_tratativa) : ""].filter(Boolean).join(" · ");
+    return `<span class="st" style="background:${SIT_COR[s]}">${esc(s)}</span>${datas ? `<small class="resp">${datas}</small>` : ""}` +
+      (t.observacao ? `<small class="resp" title="${esc(t.observacao)}">📝 ${esc(String(t.observacao).slice(0, 40))}${String(t.observacao).length > 40 ? "…" : ""}</small>` : "") +
+      ` <button class="bt bt-sec bt-mini" data-edita="${i}">✎ Editar</button>`;
+  }
+  // repinta a coluna de tratativa e o quadro "Tratadas" (depois de salvar ou de recarregar os dados)
+  function pintarTrat() {
+    if (!CZ.linhas.length) return;
+    $$("#tb-cruzar tr").forEach((tr, i) => { const td = tr.querySelector("td.cz-trat"); if (td) td.innerHTML = celTrat(i); });
+    const n = { "Não tratada": 0, "Em tratativa": 0, "Tratada": 0 };
+    CZ.linhas.forEach((_, i) => { n[situacaoDe(i)]++; });
+    const k = $("#cz-trat-kpi");
+    if (k) k.innerHTML = `<small>Tratadas</small><b>${n["Tratada"]} de ${CZ.linhas.length}</b><span class="resp">${n["Em tratativa"]} em tratativa · ${n["Não tratada"]} não tratadas</span>`;
+    filtrarMultas();
+  }
+  function editarMulta(i) {
+    const l = CZ.linhas[i], t = TRAT_M.get(CZ.chaves[i]) || {};
+    const placa = String(l[CZ.iPlaca]).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const hoje = new Date().toISOString().slice(0, 10);
+    abrirModal(`<h2>Multa · ${esc(placa)}</h2>
+      <div class="dados">
+        <div><small>Data da multa</small>${CZ.quando[i] ? CZ.quando[i].toLocaleString("pt-BR") : "—"}</div>
+        <div><small>Condutor</small>${esc(CZ.cond[i]) || "—"}</div>
+        <div><small>Valor</small>${CZ.valores[i] ? "R$ " + fmtN(CZ.valores[i], 2) : "—"}</div>
+        <div><small>Faixa</small>${esc(CZ.faixas[i]) || "—"}</div>
+        ${CZ.iAuto >= 0 ? `<div><small>${esc(CZ.cab[CZ.iAuto])}</small>${esc(l[CZ.iAuto])}</div>` : ""}
+      </div>
+      <h3>Tratativa</h3>
+      <div class="campos">
+        <label>Situação<select id="mt-sit">${["Não tratada", "Em tratativa", "Tratada"].map(s => `<option ${situacaoDe(i) === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
+        <label>Data de envio ao condutor<input id="mt-envio" type="date" value="${esc(String(t.data_envio || "").slice(0, 10))}"></label>
+        <label>Data da tratativa<input id="mt-data" type="date" value="${esc(String(t.data_tratativa || "").slice(0, 10))}"></label>
+        <label class="larga">Observação<input id="mt-obs" value="${esc(t.observacao || "")}" placeholder="Ex.: condutor indicado no Detran, desconto em folha, recurso…"></label>
+      </div>
+      <div class="linha-bt"><button class="bt bt-pri" id="mt-salva">Salvar</button><span id="mt-msg" class="msg"></span>
+        ${t.tratado_por ? `<span class="info">última alteração: ${esc(t.tratado_por)} · ${dataHora(t.tratado_em)}</span>` : ""}</div>`);
+    $("#mt-sit").addEventListener("change", e => { if (e.target.value === "Tratada" && !$("#mt-data").value) $("#mt-data").value = hoje; });
+    $("#mt-salva").addEventListener("click", async () => {
+      const sit = $("#mt-sit").value, dt = $("#mt-data").value;
+      if (sit === "Tratada" && !dt) return msg($("#mt-msg"), "Informe a data da tratativa.", "erro");
+      msg($("#mt-msg"), "Gravando…");
+      const q = CZ.quando[i];
+      try {
+        await api("salvar_multa", { dados: { chave: CZ.chaves[i], placa, data_multa: q ? paraInput(q).replace("T", " ") : String(l[CZ.iData] || ""),
+          auto: CZ.iAuto >= 0 ? String(l[CZ.iAuto] || "") : "", valor: CZ.valores[i] ? CZ.valores[i].toFixed(2) : "", condutor: CZ.cond[i] || "", faixa: CZ.faixas[i] || "",
+          situacao: sit, data_envio: $("#mt-envio").value, data_tratativa: dt, observacao: $("#mt-obs").value.trim() } });
+        fecharModal();
+      } catch (err) { msg($("#mt-msg"), err.message, "erro"); }
+    });
+  }
   const dataDe = (v, hora) => {
     let d = null;
     if (v instanceof Date) d = new Date(v.getTime());
@@ -675,14 +774,37 @@
         if (rr >= 0) { m = mm; r = rr; break; }
       }
       if (!m) return msg(el, "Não achei uma aba com as colunas Placa e Data.", "erro");
-      const cab = m[r].map(c => String(c).trim()), cs = cab.map(sem);
+      const cab = m[r].map(c => String(c).trim());
+      const iP = cab.map(sem).indexOf("placa");
+      // datas viram texto dd/mm/aaaa hh:mm (assim a base fica igual quando volta da planilha)
+      const p2 = n => String(n).padStart(2, "0");
+      const txt = v => !(v instanceof Date) || isNaN(v) ? v : v.getFullYear() < 1901 ? p2(v.getHours()) + ":" + p2(v.getMinutes())
+        : `${p2(v.getDate())}/${p2(v.getMonth() + 1)}/${v.getFullYear()}` + (v.getHours() || v.getMinutes() ? ` ${p2(v.getHours())}:${p2(v.getMinutes())}` : "");
+      const linhas = m.slice(r + 1).filter(l => String(l[iP] || "").trim()).map(l => cab.map((_, j) => txt(l[j] === undefined ? "" : l[j])));
+      processarMultas(cab, linhas);
+      // grava na planilha (Frota.xlsx, aba Multas) para a base continuar aqui depois de atualizar a página
+      msg(el, `Gravando ${linhas.length} multas na planilha…`);
+      const regs = CZ.linhas.map((l, i) => {
+        const o = {}; cab.forEach((c, j) => { if (c) o[c] = l[j]; });
+        const q = CZ.quando[i];
+        return { chave: CZ.chaves[i], placa: String(l[CZ.iPlaca]).toUpperCase().replace(/[^A-Z0-9]/g, ""), data_multa: q ? paraInput(q).replace("T", " ") : String(l[CZ.iData] || ""),
+          auto: CZ.iAuto >= 0 ? String(l[CZ.iAuto] || "") : "", valor: CZ.valores[i] ? CZ.valores[i].toFixed(2) : "", condutor: CZ.cond[i] || "", faixa: CZ.faixas[i] || "", dados: JSON.stringify(o) };
+      });
+      const r2 = await api("subir_multas", { regs });
+      const rr2 = (r2 && r2.r) || {};
+      msg(el, `✓ Base gravada: ${rr2.novas != null ? rr2.novas + " multas novas, " + rr2.atualizadas + " já estavam na base" : linhas.length + " multas"}. Ela continua aqui quando você atualizar a página.`, "ok");
+    } catch (err) { msg(el, "Erro ao ler a base: " + (err.message || err), "erro"); }
+  });
+  // monta a tela de multas a partir de cabeçalho + linhas (vem do arquivo ou da planilha gravada)
+  function processarMultas(cab, linhas) {
+      const el = $("#cz-msg");
+      cab = cab.map(c => String(c).trim()); const cs = cab.map(sem);
       const iPlaca = cs.indexOf("placa");
       const iData = cs.findIndex(c => c === "data" || c.startsWith("data da") || c.startsWith("data do") || c.startsWith("data/hora") || c.startsWith("data e hora") || c.startsWith("data"));
       const iHora = cs.findIndex(c => c === "hora" || c.startsWith("hora da") || c.startsWith("hora do"));
       // valor da multa: coluna com "valor" (de preferência "valor da multa"), "vlr" ou "R$"
       let iValor = cs.findIndex(c => /valor|vlr/.test(c) && /multa|infra/.test(c));
       if (iValor < 0) iValor = cs.findIndex(c => /^valor|^vlr|r\$/.test(c) && !/desconto|pago|juros/.test(c));
-      const linhas = m.slice(r + 1).filter(l => String(l[iPlaca] || "").trim());
       let achou = 0, semData = 0;
       const quando = [], cond = [], origem = [];
       linhas.forEach(l => {
@@ -716,12 +838,17 @@
       const faixas = linhas.map((l, i) => (iGrav >= 0 && faixaDoTexto(l[iGrav])) || faixaDoValor(valores[i]));
       const alertas = linhas.map(l => { const p = placaDe(l), n = naBase[p], a = antes[p] || 0;
         return n >= 2 ? `⚠ Reincidente (${n + a}x)` : a ? `⚠ Reincidente (${a + 1}x)` : ""; });
-      CZ = { cab, linhas, iPlaca, iData, quando, cond, origem, condBase, valores, alertas, iValor, faixas, so: false, faixa: "" };
+      // identificação da multa: nº do auto de infração (AIT); se não tiver, placa + data/hora + valor
+      const iAuto = cs.findIndex(c => /(^|[^a-z])(ait|auto)([^a-z]|$)/.test(c) || /auto de infra|n(umero|º|o)? ?(da|de)? ?infra/.test(c));
+      const chavesM = linhas.map((l, i) => { const au = iAuto >= 0 ? String(l[iAuto] || "").trim().toUpperCase() : "";
+        return au ? "AIT:" + au : placaDe(l) + "|" + (quando[i] ? paraInput(quando[i]) : String(l[iData] || "").trim()) + "|" + valores[i].toFixed(2); });
+      CZ = { cab, linhas, iPlaca, iData, iAuto, quando, cond, origem, condBase, valores, alertas, iValor, faixas, chaves: chavesM, so: false, faixa: "", sit: "" };
       const reinc = Object.keys(naBase).filter(p => naBase[p] >= 2 || antes[p]);
       const tot = valores.reduce((a, v) => a + v, 0);
       const kp = (t, v, c) => `<div class="kpi" style="border-left-color:${c}"><small>${t}</small><b>${v}</b></div>`;
       $("#cz-kpis").innerHTML = kp("Valor das multas", iValor >= 0 ? "R$ " + fmtN(tot, 2) : "sem coluna de valor", "#b91c1c") + kp("Multas na base", linhas.length.toLocaleString("pt-BR"), "#0e7c86")
-        + kp("Placas reincidentes", reinc.length, reinc.length ? "#b91c1c" : "#15803d").replace('class="kpi"', 'class="kpi" id="cz-reinc" title="Clique para ver só as reincidentes"') + kp("Com condutor", `${achou} de ${linhas.length}`, "#4338ca");
+        + kp("Placas reincidentes", reinc.length, reinc.length ? "#b91c1c" : "#15803d").replace('class="kpi"', 'class="kpi" id="cz-reinc" title="Clique para ver só as reincidentes"') + kp("Com condutor", `${achou} de ${linhas.length}`, "#4338ca")
+        + `<div class="kpi" id="cz-trat-kpi" style="border-left-color:#15803d"></div>`;
       $("#cz-reinc").addEventListener("click", () => { CZ.so = !CZ.so; $("#cz-reinc").classList.toggle("on", CZ.so); filtrarMultas(); });
       // quadro por faixa: quantidade e valor; clique filtra a tabela
       const ORDEM = ["Leve", "Média", "Grave", "Gravíssima"], COR = { "Leve": "#16a34a", "Média": "#ca8a04", "Grave": "#ea580c", "Gravíssima": "#b91c1c" };
@@ -733,32 +860,48 @@
       $$("#cz-faixas .faixa").forEach(el => el.addEventListener("click", () => { CZ.faixa = CZ.faixa === el.dataset.faixa ? "" : el.dataset.faixa; $$("#cz-faixas .faixa").forEach(x => x.classList.toggle("on", x.dataset.faixa === CZ.faixa)); filtrarMultas(); }));
       // ordem: Placa, Condutor e Alerta primeiro; depois as outras colunas da planilha
       const outras = cab.map((_, j) => j).filter(j => j !== iPlaca);
-      $("#cz-cab").innerHTML = `<tr><th>${esc(cab[iPlaca])}</th><th style="background:#dcfce7">Condutor</th><th style="background:#fee2e2">Alerta</th><th>Faixa</th>` + outras.map(j => `<th>${esc(cab[j])}</th>`).join("") + "</tr>";
+      $("#cz-cab").innerHTML = `<tr><th>${esc(cab[iPlaca])}</th><th style="background:#dcfce7">Condutor</th><th style="background:#fee2e2">Alerta</th><th>Faixa</th><th style="background:#e0f2fe">Tratativa</th>` + outras.map(j => `<th>${esc(cab[j])}</th>`).join("") + "</tr>";
       const fmt = v => v instanceof Date ? v.toLocaleString("pt-BR") : esc(v);
       $("#tb-cruzar").innerHTML = linhas.map((l, i) => `<tr><td><b>${fmt(l[iPlaca])}</b></td>` +
         `<td style="font-weight:800;background:#f0fdf4">${cond[i] ? esc(cond[i]) + (origem[i] === "base" ? '<small class="resp">base de veículos</small>' : '<small class="resp">no dia da multa</small>') : '<span style="color:#b91c1c">placa fora da base</span>'}</td>` +
-        `<td style="color:#b91c1c;font-weight:800;white-space:nowrap">${esc(alertas[i])}</td><td><span class="tag-faixa f-${sem(faixas[i]).replace(/[^a-z]/g, "").slice(0, 10)}">${esc(faixas[i])}</span></td>` +
+        `<td style="color:#b91c1c;font-weight:800;white-space:nowrap">${esc(alertas[i])}</td><td><span class="tag-faixa f-${sem(faixas[i]).replace(/[^a-z]/g, "").slice(0, 10)}">${esc(faixas[i])}</span></td><td class="cz-trat" style="white-space:nowrap"></td>` +
         outras.map(j => `<td>${fmt(l[j])}</td>`).join("") + "</tr>").join("");
       $("#cz-busca").value = ""; $("#cz-filtro").hidden = false;
       $$("#tb-cruzar tr").forEach((tr, i) => { if (alertas[i]) tr.classList.add("tem-alerta"); });
-      msg(el, "");
+      pintarTrat();
       $("#bt-cruzar-exp").hidden = false;   // multas: só baixar (batidas vão em Ocorrências)
-    } catch (err) { msg(el, "Erro ao ler a base: " + (err.message || err), "erro"); }
-  });
+  }
+  // depois de atualizar a página: remonta a tela com a base de multas gravada na planilha
+  function montarMultasSalvas() {
+    const salvas = Array.from(TRAT_M.values()).filter(m => m.dados);
+    if (!salvas.length) return false;
+    const objs = salvas.map(m => { try { return JSON.parse(m.dados); } catch (e) { return null; } }).filter(Boolean);
+    const cab = [];
+    objs.forEach(o => Object.keys(o).forEach(k => { if (cab.indexOf(k) < 0) cab.push(k); }));
+    if (!cab.some(c => sem(c) === "placa")) return false;
+    processarMultas(cab, objs.map(o => cab.map(c => o[c] == null ? "" : o[c])));
+    $("#cz-msg").textContent = `${objs.length} multas gravadas na planilha. Para incluir novas, clique em Subir base.`;
+    $("#cz-msg").className = "msg";
+    return true;
+  }
   // busca por placa ou condutor (junto com o filtro de reincidentes)
   function filtrarMultas() {
     const b = sem($("#cz-busca").value).replace(/[^a-z0-9 ]/g, "");
     let n = 0;
     $$("#tb-cruzar tr").forEach((tr, i) => {
       const placa = String(CZ.linhas[i] ? CZ.linhas[i][CZ.iPlaca] : "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const ok = (!CZ.so || CZ.alertas[i]) && (!CZ.faixa || String(CZ.faixas[i] || "").startsWith(CZ.faixa)) && (!b || sem(placa).includes(b.replace(/ /g, "")) || sem(CZ.cond[i] || "").includes(b));
+      const ok = (!CZ.sit || situacaoDe(i) === CZ.sit) && (!CZ.so || CZ.alertas[i]) && (!CZ.faixa || String(CZ.faixas[i] || "").startsWith(CZ.faixa)) && (!b || sem(placa).includes(b.replace(/ /g, "")) || sem(CZ.cond[i] || "").includes(b));
       tr.hidden = !ok; if (ok) n++;
     });
     $("#cz-info").textContent = CZ.linhas.length ? `${n} de ${CZ.linhas.length}` : "";
   }
   $("#cz-busca").addEventListener("input", filtrarMultas);
+  $("#cz-sit").addEventListener("change", e => { CZ.sit = e.target.value; filtrarMultas(); });
+  $("#tb-cruzar").addEventListener("click", e => { const b = e.target.closest("[data-edita]"); if (b) editarMulta(Number(b.dataset.edita)); });
   $("#bt-cruzar-exp").addEventListener("click", () => {
-    const aoa = [CZ.cab.concat("Condutor", "De onde veio o condutor", "Alerta", "Faixa")].concat(CZ.linhas.map((l, i) => CZ.cab.map((_, j) => l[j]).concat(CZ.cond[i] || "", CZ.origem[i] === "base" ? "base de veículos" : CZ.origem[i] === "dia" ? "no dia da multa" : "placa fora da base", CZ.alertas[i] || "", CZ.faixas[i] || "")));
+    const aoa = [CZ.cab.concat("Condutor", "De onde veio o condutor", "Alerta", "Faixa", "Situação", "Data de envio ao condutor", "Data da tratativa", "Observação", "Alterado por")].concat(CZ.linhas.map((l, i) => { const t = TRAT_M.get(CZ.chaves[i]) || {};
+      return CZ.cab.map((_, j) => l[j]).concat(CZ.cond[i] || "", CZ.origem[i] === "base" ? "base de veículos" : CZ.origem[i] === "dia" ? "no dia da multa" : "placa fora da base", CZ.alertas[i] || "", CZ.faixas[i] || "",
+        situacaoDe(i), dataCurta(t.data_envio), dataCurta(t.data_tratativa), t.observacao || "", t.tratado_por || ""); }));
     const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "dd/mm/yyyy hh:mm" });
     XLSX.utils.book_append_sheet(wb, ws, "Com condutor"); XLSX.writeFile(wb, "Base com condutor no dia.xlsx");
   });
@@ -897,12 +1040,12 @@
   }
 
   function montarFiltrosComb() {
-    const meses = Array.from(new Set(COMB.map(x => x.mes))).sort().reverse();
+    const meses = Array.from(new Set(COMB.map(x => x.mes).concat(TRANS_MESES))).filter(Boolean).sort().reverse();
     if (!fcb.mes || meses.indexOf(fcb.mes) < 0) fcb.mes = meses[0] || "";
     $("#cb-mes").innerHTML = meses.length ? meses.map(x => `<option value="${x}">${nomeMes(x)}</option>`).join("") : "<option value=''>Nenhum mês</option>";
     $("#cb-mes").value = fcb.mes;
     const op = (id, lista, todos) => { const v = $(id).value; $(id).innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); $(id).value = lista.indexOf(v) >= 0 ? v : ""; };
-    const doMes = COMB.filter(x => x.mes === fcb.mes);
+    const doMes = fcb.mes ? fonteComb().rows : [];
     op("#cb-gestor", gestoresDo($("#cb-contrato").value), "Todos os gestores");
     op("#cb-contrato", contratosDo($("#cb-gestor").value), "Todos os contratos");
     fcb.contrato = $("#cb-contrato").value;
@@ -910,7 +1053,7 @@
     atualizarListaCC();
     fcb.gestor = $("#cb-gestor").value; fcb.comb = $("#cb-comb").value; fcb.cc = ccDoCampo($("#cb-cc-txt").value);
   }
-  $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); });
+  $("#cb-mes").addEventListener("change", e => { fcb.mes = e.target.value; montarFiltrosComb(); desenharComb(); if (!TRANS_C[fcb.mes]) garantirTrans(fcb.mes, () => { montarFiltrosComb(); desenharComb(); }); });
   $("#cb-gestor").addEventListener("change", e => { fcb.gestor = e.target.value; montarFiltrosComb(); desenharComb(); });
   $("#cb-contrato").addEventListener("change", e => { fcb.contrato = e.target.value; montarFiltrosComb(); desenharComb(); });
   $("#cb-comb").addEventListener("change", e => { fcb.comb = e.target.value; desenharComb(); });
@@ -929,26 +1072,45 @@
   const nomeDiferente = p => { const q = (p.motoristas && p.motoristas[0]) || (p.cartao && p.cartao.responsavel); return !!(q && p.condutor && sem(q) !== sem(p.condutor)); };
 
   // junta as linhas de cada placa (gasolina + etanol) e marca alerta de consumo
+  // de onde vêm os números do mês: as TRANSAÇÕES (mês inteiro, igual ao portal) quando já subiu; senão o relatório de consumo
+  function fonteComb() {
+    const tr = TRANS_C[fcb.mes];
+    if (tr && tr.length) {
+      const ccPl = new Map(CARTOES.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
+      const ccCo = new Map(COMB.filter(x => x.centro_custo).map(x => [x.placa, x.centro_custo]));
+      const vis = new Set(VEICULOS.map(v => v.placa));
+      const rows = tr.filter(t => noEscopo(t.placa) && (!equipeAtiva() || vis.has(t.placa))).map(t => {
+        const ok = !ehPedagio(t) && kmValido(t);
+        return { placa: String(t.placa || "").toUpperCase(), mes: fcb.mes, combustivel: ehPedagio(t) ? "" : String(t.combustivel || "").trim().toUpperCase(),
+          km_rodados: ok ? n0(numBR(t.km_rodados)) : 0, litros: ehPedagio(t) ? 0 : n0(numBR(t.litros)), litrosKm: ok ? n0(numBR(t.litros)) : 0, total: n0(numBR(t.valor)),
+          centro_custo: ccPl.get(String(t.placa || "").toUpperCase()) || ccCo.get(t.placa) || "", modelo: t.modelo || "", ultima_km: n0(numBR(t.hodometro)), condutores: "", data: String(t.data || "") };
+      });
+      const ult = rows.reduce((m, t) => t.data > m ? t.data : m, "");
+      return { trans: true, rows, periodo: `de 01/${fcb.mes.slice(5, 7)} até ${ult ? ult.slice(8, 10) + "/" + ult.slice(5, 7) : "hoje"} · transações` };
+    }
+    const per = (COMB.find(x => x.mes === fcb.mes && x.periodo) || {}).periodo;
+    return { trans: false, rows: COMB.filter(x => x.mes === fcb.mes), periodo: per ? per + " · relatório de consumo" : "" };
+  }
   function consumoPorPlaca() {
     const veic = new Map(VEICULOS.map(v => [v.placa, v]));
     const mp = new Map();
-    COMB.filter(x => x.mes === fcb.mes && bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb) && bateCC(x.centro_custo, fcb.cc)).forEach(x => {
+    fonteComb().rows.filter(x => bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb) && bateCC(x.centro_custo, fcb.cc)).forEach(x => {
       let p = mp.get(x.placa);
       if (!p) { const v = veic.get(x.placa); const dn = dono(x.placa, x); p = { placa: x.placa, condutor: x.condutores || dn.condutor || "", modelo: x.modelo || (v && v.modelo) || "", gestor: dn.gestor, operacao: dn.contrato,
         cc: x.centro_custo || "", combs: [], km: 0, litros: 0, total: 0, limite: x.limite, saldo: x.saldo, coringa: ehCoringa(x, v), naFrota: x.na_frota !== "NAO" }; mp.set(x.placa, p); }
       if (x.combustivel && p.combs.indexOf(x.combustivel) < 0) p.combs.push(x.combustivel);
-      p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total); p.odo = Math.max(p.odo || 0, n0(x.ultima_km));
+      p.km += n0(x.km_rodados); p.litros += n0(x.litros); p.total += n0(x.total); p.litrosKm = (p.litrosKm || 0) + n0(x.litrosKm != null ? x.litrosKm : x.litros); p.odo = Math.max(p.odo || 0, n0(x.ultima_km));
       if (!p.cc && x.centro_custo) p.cc = x.centro_custo;
     });
     const lista = Array.from(mp.values());
-    lista.forEach(p => { p.kml = p.litros > 0 && p.km > 0 ? p.km / p.litros : null; p.rsl = p.litros > 0 ? p.total / p.litros : null; });
+    lista.forEach(p => { p.kml = p.litrosKm > 0 && p.km > 0 ? p.km / p.litrosKm : null; p.rsl = p.litros > 0 ? p.total / p.litros : null; });
     // referência: mediana do km/L do mesmo modelo (precisa de 3 carros ou mais)
     const porModelo = {};
     lista.forEach(p => { if (p.kml) (porModelo[sem(p.modelo)] = porModelo[sem(p.modelo)] || []).push(p.kml); });
     lista.forEach(p => {
       const ks = (porModelo[sem(p.modelo)] || []).slice().sort((a, b) => a - b);
       p.ref = ks.length >= 3 ? ks[Math.floor(ks.length / 2)] : null;
-      p.alerta = p.litros > 0 && p.km <= 0 ? "Abasteceu sem km rodado" : p.ref && p.kml && p.kml < p.ref * 0.75 ? `Km/L abaixo do normal do ${p.modelo} (${fmtN(p.ref, 1)})` : "";
+      p.alerta = p.litros > 0 && p.km <= 0 ? "Abasteceu sem km válido" : p.ref && p.kml && p.kml < p.ref * 0.75 ? `Km/L abaixo do normal do ${p.modelo} (${fmtN(p.ref, 1)})` : "";
     });
     return lista.filter(p => (!fcb.busca || sem([p.placa, p.condutor, p.modelo, p.gestor, p.cc].join(" ")).includes(fcb.busca)) && (!fcb.alerta || p.alerta));
   }
@@ -1022,29 +1184,29 @@
   function desenharComb() {
     $("#cb-cab").innerHTML = CAB_UNI();
     desenharTrans();
-    if (!COMB.length && !CARTOES.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="${NCOL}" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Suba o relatório de consumo e o Extrato Simplificado." : ""}</td></tr>`; $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = ""; return; }
+    const FT = fonteComb();
+    if (!FT.rows.length && !CARTOES.length) { $("#cb-kpis").innerHTML = ""; $("#tb-comb").innerHTML = `<tr><td colspan="${NCOL}" class="info">Nenhum consumo gravado ainda.${EU && EU.perfil === "admin" ? " Suba o relatório de consumo e o Extrato Simplificado." : ""}</td></tr>`; $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = ""; return; }
     const { lista, cond, cor } = linhasUnificadas();
-    const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, t: a.t + p.total }), { km: 0, l: 0, t: 0 });
+    const tot = lista.reduce((a, p) => ({ km: a.km + p.km, l: a.l + p.litros, lk: a.lk + (p.litrosKm || 0), t: a.t + p.total }), { km: 0, l: 0, lk: 0, t: 0 });
     const k = (t, v, cor2) => `<div class="kpi"${cor2 ? ` style="border-left-color:${cor2}"` : ""}><small>${t}</small><b>${v}</b></div>`;
-    $("#cb-kpis").innerHTML = k("Gasto no mês", "R$ " + fmtN(tot.t, 2)) + k("Litros", fmtN(tot.l)) + k("Km rodados", fmtN(tot.km)) + k("Km/L médio", fmtN(tot.l ? tot.km / tot.l : null, 2))
+    $("#cb-kpis").innerHTML = k("Gasto no mês", "R$ " + fmtN(tot.t, 2)) + k("Litros", fmtN(tot.l)) + k("Km rodados", fmtN(tot.km)) + k("Km/L médio", fmtN(tot.lk ? tot.km / tot.lk : null, 2))
       + k("Carros com condutor", cond.length) + k("Nome diferente da base", `${cond.filter(nomeDiferente).length} de ${cond.filter(p => p.cartao && p.condutor).length}`, "#ea580c") + k("Carros coringa", cor.length, "#7c3aed") + k("Com alerta", cond.concat(cor).filter(p => p.alerta || (p.cartao && p.pct >= 90)).length, "#b91c1c");
     // uma tabela só: condutores e, no fim, a seção dos coringas
     $("#tb-comb").innerHTML = linhasUni(cond, "Nenhum carro com esse filtro.")
       + (cor.length ? `<tr class="secao"><td colspan="${NCOL}">Coringa · ${cor.length} ${cor.length === 1 ? "cartão" : "cartões"}</td></tr>` + linhasUni(cor, "") : "");
     $("#cb-uni-info").textContent = `${cond.length} carros` + (CARTOES.length ? ` · extrato de ${CARTOES[0].data_ref || "-"}` : "");
     $("#cb-cor-info").textContent = cor.length ? `· coringa: ${cor.length} · consumo R$ ${fmtN(cor.reduce((a, p) => a + p.total, 0), 2)} · saldo R$ ${fmtN(cor.reduce((a, p) => a + (p.saldoC || 0), 0), 2)}` : "";
-    if (!COMB.length) { $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = '<tr><td colspan="7" class="info">Suba o relatório de consumo para ver o gasto por centro de custo.</td></tr>'; return; }
-    const per = (COMB.find(x => x.mes === fcb.mes && x.periodo) || {}).periodo;
-    $("#cb-info").textContent = `${nomeMes(fcb.mes)}${per ? " (" + per + ")" : ""} · ${lista.length} carros`;
+    if (!FT.rows.length) { $("#cb-info").textContent = ""; $("#tb-cc").innerHTML = '<tr><td colspan="7" class="info">Suba as transações (ou o relatório de consumo) para ver o gasto por centro de custo.</td></tr>'; return; }
+    $("#cb-info").textContent = `${nomeMes(fcb.mes)}${FT.periodo ? " (" + FT.periodo + ")" : ""} · ${lista.length} carros`;
     // gasto por centro de custo (respeita mês, gestor e combustível)
     const g = {};
-    COMB.filter(x => x.mes === fcb.mes && bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb)).forEach(x => {
+    FT.rows.filter(x => bateDono(x.placa, x, fcb.gestor, fcb.contrato) && (!fcb.comb || x.combustivel === fcb.comb)).forEach(x => {
       const c = x.centro_custo || "Sem centro de custo";
-      const o = g[c] = g[c] || { placas: new Set(), l: 0, km: 0, t: 0 };
-      o.placas.add(x.placa); o.l += n0(x.litros); o.km += n0(x.km_rodados); o.t += n0(x.total);
+      const o = g[c] = g[c] || { placas: new Set(), l: 0, lk: 0, km: 0, t: 0 };
+      o.placas.add(x.placa); o.l += n0(x.litros); o.lk += n0(x.litrosKm != null ? x.litrosKm : x.litros); o.km += n0(x.km_rodados); o.t += n0(x.total);
     });
     const ccs = Object.keys(g).sort((a, b) => g[b].t - g[a].t), totG = ccs.reduce((a, c) => a + g[c].t, 0);
-    $("#tb-cc").innerHTML = ccs.map(c => `<tr class="clica${fcb.cc && bateCC(c, fcb.cc) ? " cc-on" : ""}" data-cc="${esc(c === "Sem centro de custo" ? "" : c)}"><td><b>${esc(c)}</b></td><td class="num">${g[c].placas.size}</td><td class="num">${fmtN(g[c].l, 2)}</td><td class="num">${fmtN(g[c].km)}</td><td class="num">${fmtN(g[c].l ? g[c].km / g[c].l : null, 2)}</td><td class="num"><b>${fmtN(g[c].t, 2)}</b></td><td class="num">${totG ? fmtN(g[c].t / totG * 100, 1) + "%" : "-"}</td></tr>`).join("") || '<tr><td colspan="7" class="info">Sem dados.</td></tr>';
+    $("#tb-cc").innerHTML = ccs.map(c => `<tr class="clica${fcb.cc && bateCC(c, fcb.cc) ? " cc-on" : ""}" data-cc="${esc(c === "Sem centro de custo" ? "" : c)}"><td><b>${esc(c)}</b></td><td class="num">${g[c].placas.size}</td><td class="num">${fmtN(g[c].l, 2)}</td><td class="num">${fmtN(g[c].km)}</td><td class="num">${fmtN(g[c].lk ? g[c].km / g[c].lk : null, 2)}</td><td class="num"><b>${fmtN(g[c].t, 2)}</b></td><td class="num">${totG ? fmtN(g[c].t / totG * 100, 1) + "%" : "-"}</td></tr>`).join("") || '<tr><td colspan="7" class="info">Sem dados.</td></tr>';
   }
   ["#tb-comb"].forEach(id => $(id).addEventListener("click", e => { const tr = e.target.closest("tr[data-placa]"); if (tr && VEICULOS.some(v => v.placa === tr.dataset.placa)) abrirVeiculo(tr.dataset.placa); }));
 
@@ -1271,7 +1433,7 @@
     const caixa = $("#cb-trans-caixa");
     const hoje = new Date();
     const mes = fcb.mes || (hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0"));
-    if (!TRANS_C[mes]) { garantirTrans(mes, () => { desenharTrans(); if (fcb.mes) desenharComb(); }); caixa.hidden = true; return; }
+    if (!TRANS_C[mes]) { garantirTrans(mes, () => { montarFiltrosComb(); desenharComb(); }); caixa.hidden = true; return; }
     const rows = transFiltradas(mes, { g: fcb.gestor, ct: fcb.contrato, cc: fcb.cc, busca: fcb.busca });
     caixa.hidden = !TRANS_C[mes].length;
     const al = alertasTrans(rows);
@@ -1331,7 +1493,8 @@
     frk.gestor = opSel("#rk-gestor", gestoresDo($("#rk-contrato").value), "Todos os gestores");
     frk.contrato = opSel("#rk-contrato", contratosDo(frk.gestor), "Todos os contratos");
     const todasRows = transFiltradas(frk.mes, { g: frk.gestor, ct: frk.contrato });
-    frk.comb = opSel("#rk-comb", Array.from(new Set(todasRows.filter(t => !ehGerador(t) && !ehPedagio(t)).map(t => String(t.combustivel || "").trim().toUpperCase()).filter(Boolean))).sort(), "Todos os combustíveis");
+    // lista todos os combustíveis que existem na base do mês (mesmo os que só aparecem em outro contrato, equipe ou gerador)
+    frk.comb = opSel("#rk-comb", Array.from(new Set((TRANS_C[frk.mes] || []).filter(t => !ehPedagio(t)).map(t => String(t.combustivel || "").trim().toUpperCase()).filter(Boolean))).sort(), "Todos os combustíveis");
     const rows = frk.comb ? todasRows.filter(t => ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb) : todasRows;
     let r = rankingTecnicos(rows);
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
