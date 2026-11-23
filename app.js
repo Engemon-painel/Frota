@@ -665,17 +665,33 @@
       const kp = (t, v, c) => `<div class="kpi" style="border-left-color:${c}"><small>${t}</small><b>${v}</b></div>`;
       $("#cz-kpis").innerHTML = kp("Valor das multas", iValor >= 0 ? "R$ " + fmtN(tot, 2) : "sem coluna de valor", "#b91c1c") + kp("Multas na base", linhas.length.toLocaleString("pt-BR"), "#0e7c86")
         + kp("Placas reincidentes", reinc.length, reinc.length ? "#b91c1c" : "#15803d").replace('class="kpi"', 'class="kpi" id="cz-reinc" title="Clique para ver só as reincidentes"') + kp("Com condutor", `${achou} de ${linhas.length}`, "#4338ca");
-      $("#cz-reinc").addEventListener("click", () => { CZ.so = !CZ.so; $("#cz-reinc").classList.toggle("on", CZ.so); $$("#tb-cruzar tr").forEach((tr, i) => { tr.hidden = CZ.so && !CZ.alertas[i]; }); });
-      $("#cz-cab").innerHTML = "<tr>" + cab.map(c => `<th>${esc(c)}</th>`).join("") + '<th style="background:#dcfce7">Condutor</th><th style="background:#fee2e2">Alerta</th></tr>';
+      $("#cz-reinc").addEventListener("click", () => { CZ.so = !CZ.so; $("#cz-reinc").classList.toggle("on", CZ.so); filtrarMultas(); });
+      // ordem: Placa, Condutor e Alerta primeiro; depois as outras colunas da planilha
+      const outras = cab.map((_, j) => j).filter(j => j !== iPlaca);
+      $("#cz-cab").innerHTML = `<tr><th>${esc(cab[iPlaca])}</th><th style="background:#dcfce7">Condutor</th><th style="background:#fee2e2">Alerta</th>` + outras.map(j => `<th>${esc(cab[j])}</th>`).join("") + "</tr>";
       const fmt = v => v instanceof Date ? v.toLocaleString("pt-BR") : esc(v);
-      $("#tb-cruzar").innerHTML = linhas.map((l, i) => "<tr>" + cab.map((_, j) => `<td>${fmt(l[j])}</td>`).join("") +
+      $("#tb-cruzar").innerHTML = linhas.map((l, i) => `<tr><td><b>${fmt(l[iPlaca])}</b></td>` +
         `<td style="font-weight:800;background:#f0fdf4">${cond[i] ? esc(cond[i]) + (origem[i] === "base" ? '<small class="resp">base de veículos</small>' : '<small class="resp">no dia da multa</small>') : '<span style="color:#b91c1c">placa fora da base</span>'}</td>` +
-        `<td style="color:#b91c1c;font-weight:800;white-space:normal;min-width:180px">${esc(alertas[i])}</td></tr>`).join("");
+        `<td style="color:#b91c1c;font-weight:800;white-space:nowrap">${esc(alertas[i])}</td>` +
+        outras.map(j => `<td>${fmt(l[j])}</td>`).join("") + "</tr>").join("");
+      $("#cz-busca").value = ""; $("#cz-filtro").hidden = false;
       $$("#tb-cruzar tr").forEach((tr, i) => { if (alertas[i]) tr.classList.add("tem-alerta"); });
       msg(el, "");
       ["#bt-cruzar-exp", "#bt-cruzar-ocor", "#cz-tipo"].forEach(id => { $(id).hidden = false; });
     } catch (err) { msg(el, "Erro ao ler a base: " + (err.message || err), "erro"); }
   });
+  // busca por placa ou condutor (junto com o filtro de reincidentes)
+  function filtrarMultas() {
+    const b = sem($("#cz-busca").value).replace(/[^a-z0-9 ]/g, "");
+    let n = 0;
+    $$("#tb-cruzar tr").forEach((tr, i) => {
+      const placa = String(CZ.linhas[i] ? CZ.linhas[i][CZ.iPlaca] : "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const ok = (!CZ.so || CZ.alertas[i]) && (!b || sem(placa).includes(b.replace(/ /g, "")) || sem(CZ.cond[i] || "").includes(b));
+      tr.hidden = !ok; if (ok) n++;
+    });
+    $("#cz-info").textContent = CZ.linhas.length ? `${n} de ${CZ.linhas.length}` : "";
+  }
+  $("#cz-busca").addEventListener("input", filtrarMultas);
   $("#bt-cruzar-exp").addEventListener("click", () => {
     const aoa = [CZ.cab.concat("Condutor", "De onde veio o condutor", "Alerta")].concat(CZ.linhas.map((l, i) => CZ.cab.map((_, j) => l[j]).concat(CZ.cond[i] || "", CZ.origem[i] === "base" ? "base de veículos" : CZ.origem[i] === "dia" ? "no dia da multa" : "placa fora da base", CZ.alertas[i] || "")));
     const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "dd/mm/yyyy hh:mm" });
