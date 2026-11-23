@@ -230,6 +230,7 @@
   // menu lateral: grupos abrem/fecham; itens com data-aba trocam a tela; data-acao executa
   $$(".mg").forEach(b => b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
   $("#bt-menu").addEventListener("click", () => document.body.classList.toggle("menu-aberto"));
+  $("#menu-x").addEventListener("click", () => document.body.classList.remove("menu-aberto"));
   $$(".menu [data-acao]").forEach(b => b.addEventListener("click", () => {
     document.body.classList.remove("menu-aberto");
     const a = b.dataset.acao;
@@ -241,8 +242,7 @@
   }));
   $$(".aba").forEach(b => b.addEventListener("click", () => {
     document.body.classList.remove("menu-aberto");
-    $$(".aba").forEach(x => x.classList.toggle("on", x === b));
-    $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + b.dataset.aba; });
+    irPara(b.dataset.aba);
   }));
 
   // ------------------------------------------------------------------ veículos
@@ -432,6 +432,10 @@
     if (ABA_ACESSO[aba] && !pode(ABA_ACESSO[aba])) aba = primeiraAba();
     $$(".aba").forEach(x => x.classList.toggle("on", x.dataset.aba === aba));
     $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-" + aba; });
+    // título do topo e da aba do navegador = tela aberta
+    const bt = document.querySelector(`#menu [data-aba="${aba}"]`);
+    const nome = bt ? bt.textContent.trim() : "Início";
+    $("#topo-titulo").textContent = nome; document.title = nome + " · Frota";
   }
 
   // ------------------------------------------------------------------ janela
@@ -1673,8 +1677,7 @@
           local: $("#n-local").value.trim(), condutor: $("#n-condutor").value.trim(), descricao: desc } });
       } catch (err) { return msg($("#n-msg"), err.message, "erro"); }
       fecharModal();
-      $$(".aba").forEach(x => x.classList.toggle("on", x.dataset.aba === "ocorrencias"));
-      $$(".aba-conteudo").forEach(c => { c.hidden = c.id !== "aba-ocorrencias"; });
+      irPara("ocorrencias");
     });
   }
 
