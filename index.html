@@ -42,6 +42,20 @@
 @media (min-width:901px){.menu-x{display:none}}
 @media (max-width:900px){.menu{margin-top:0;top:0;height:100vh;z-index:40}}
 @media (min-width:901px){.menu .menu-x{display:none}.topo{padding-left:236px}}
+
+/* ícone ao lado de cada item do menu */
+.menu .mi,.menu .ms{gap:10px!important}
+.mi-ico{display:block;width:18px;height:18px;flex:0 0 18px;opacity:.85}
+.menu .mi-ico svg{width:18px!important;height:18px!important;display:block}
+.menu .on .mi-ico{opacity:1}
+/* esconder / mostrar o menu (computador): « no menu esconde, ☰ no topo mostra */
+@media (min-width:901px){
+  .bt-menu{display:flex!important;align-items:center;justify-content:center;width:40px;height:44px;margin-left:-8px;font-size:20px;color:#0f172a}
+  body:not(.menu-fechado) .bt-menu{display:none!important}
+  .menu .menu-x{display:block!important;font-size:18px!important}
+  body.menu-fechado .menu{display:none}
+  body.menu-fechado .topo{padding-left:16px}
+}
 </style>
 </head>
 <body>
@@ -68,14 +82,14 @@
   <!-- SISTEMA -->
   <section id="tela-app" hidden>
     <header class="topo">
-      <button class="bt-menu" id="bt-menu" aria-label="Abrir menu">☰</button>
+      <button class="bt-menu" id="bt-menu" aria-label="Mostrar ou esconder o menu" title="Mostrar / esconder o menu">☰</button>
       <div class="topo-marca"><span class="ico-sigma" aria-hidden="true"></span><span id="topo-titulo">Início</span></div>
       <div class="topo-user"><span id="user-nome"></span> <span id="user-perfil" class="tag"></span>
         <button class="bt bt-sec" id="bt-sair">Sair</button></div>
     </header>
     <div class="corpo">
     <aside class="menu" id="menu">
-      <div class="menu-cab"><span class="ico-sigma" aria-hidden="true"></span><b>Controle de Frota</b><button class="menu-x" id="menu-x" aria-label="Fechar menu">✕</button></div>
+      <div class="menu-cab"><span class="ico-sigma" aria-hidden="true"></span><b>Controle de Frota</b><button class="menu-x" id="menu-x" aria-label="Esconder menu" title="Esconder o menu">«</button></div>
       <div class="sec">Principal</div>
       <button class="mi aba on" data-aba="inicio" data-acesso="inicio"><span>Início</span></button>
       <div class="grupo aberto">
@@ -340,6 +354,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>
