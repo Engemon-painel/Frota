@@ -433,7 +433,7 @@
     $$("#ini-alertas .alerta[data-ir=oficina]").forEach(a => a.addEventListener("click", () => levar("oficina")));
     const k = [["Veículos", V.length, "#0e7c86", "veiculos"], ["Ativos", ativos, "#15803d", "veiculos"], ["🔧 Na oficina", naOficina.length, naOficina.length ? "#7c3aed" : "#15803d", "oficina"],
       ["Sem garagem", semGar, semGar ? "#b91c1c" : "#15803d", "garagem"], ["Ocorrências abertas", abertas.length, abertas.length ? "#b45309" : "#15803d", "ocorrencias"],
-      ["Multas no mês", multas, multas ? "#b91c1c" : "#15803d", "ocorrencias"], ["Batidas/avarias no mês", batidas, batidas ? "#b45309" : "#15803d", "ocorrencias"],
+      ["Batidas/avarias no mês", batidas, batidas ? "#b45309" : "#15803d", "ocorrencias"],
       ["Trocas de condutor (30 dias)", trocas.length, "#4338ca", "historico"]];
     $("#ini-kpis").innerHTML = k.map(x => `<div class="kpi" data-ir="${x[3]}" style="border-left-color:${x[2]}"><small>${x[0]}</small><b>${x[1].toLocaleString("pt-BR")}</b></div>`).join("");
     $$("#ini-kpis .kpi").forEach(el => el.addEventListener("click", () => levar(el.dataset.ir)));
@@ -736,7 +736,7 @@
       $("#cz-busca").value = ""; $("#cz-filtro").hidden = false;
       $$("#tb-cruzar tr").forEach((tr, i) => { if (alertas[i]) tr.classList.add("tem-alerta"); });
       msg(el, "");
-      ["#bt-cruzar-exp", "#bt-cruzar-ocor", "#cz-tipo"].forEach(id => { $(id).hidden = false; });
+      $("#bt-cruzar-exp").hidden = false;   // multas: só baixar (batidas vão em Ocorrências)
     } catch (err) { msg(el, "Erro ao ler a base: " + (err.message || err), "erro"); }
   });
   // busca por placa ou condutor (junto com o filtro de reincidentes)
