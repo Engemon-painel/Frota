@@ -159,6 +159,7 @@
   function redesenharTudo() {
     montarFiltros(); desenhar();
     if (!$("#aba-rank").hidden) desenharRanking();
+    if (!$("#aba-alertas").hidden) desenharAlertasComb();
     $("#q-placa").innerHTML = VEICULOS.map(v => `<option>${esc(v.placa)}</option>`).join("");
     $("#h-q-placa").innerHTML = $("#q-placa").innerHTML;
     if (!$("#q-data").value) $("#q-data").value = paraInput(new Date());
@@ -245,6 +246,7 @@
     cruzar: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
     combustivel: '<rect x="4" y="4" width="10" height="16" rx="1"/><path d="M4 10h10M14 8l4 3v7a2 2 0 0 1-4 0v-3"/>',
     rank: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    alertas: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>',
     exportar: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/>'
   };
   $$("#menu .mi, #menu .ms").forEach(b => {
@@ -390,10 +392,10 @@
     if (!TRANS_C[mes]) { garantirTrans(mes, () => desenharInicio()); return ""; }
     const rows = TRANS_C[mes].filter(t => noEscopo(t.placa) && ((!g && !ct && !equipeAtiva()) || placas.has(t.placa)));
     const al = alertasTrans(rows);
-    const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
+    const mais2 = al.filter(a => a.dia2).length, acima = al.reduce((s, a) => s + a.acima, 0);
     const ofic = al.reduce((s, a) => s + (a.oficina || 0), 0);
     if (!mais2 && !acima && !ofic) return "";
-    return `<div class="alerta" data-ir="combustivel" data-acesso="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu mais de 2x no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima do tanque${ofic ? ` e <b>${ofic}</b> com o carro na oficina` : ""} em ${nomeMes(mes)}. Clique para ver.</div>`;
+    return `<div class="alerta" data-ir="combustivel" data-acesso="combustivel">⛽ <b>${mais2}</b> ${mais2 === 1 ? "vez" : "vezes"} um carro abasteceu 2+ vezes no mesmo dia e <b>${acima}</b> ${acima === 1 ? "abastecimento" : "abastecimentos"} acima de 80 L${ofic ? ` e <b>${ofic}</b> com o carro na oficina` : ""} em ${nomeMes(mes)}. Clique para ver.</div>`;
   }
   function desenharInicio() {
     $("#ini-data").textContent = "Atualizado em " + new Date().toLocaleString("pt-BR");
@@ -450,7 +452,7 @@
   // ------------------------------------------------------------------ o que cada usuário pode acessar
   const ACESSOS = { inicio: "Início", veiculos: "Veículos", trocar: "Trocar condutor", historico: "Histórico", ocorrencias: "Ocorrências", multas: "Multas e batidas",
     combustivel: "Combustível", hierarquia: "Hierarquia", exportar: "Baixar Excel" };
-  const ABA_ACESSO = { inicio: "inicio", rank: "combustivel", veiculos: "veiculos", historico: "historico", ocorrencias: "ocorrencias", cruzar: "multas", combustivel: "combustivel", hierarquia: "hierarquia" };
+  const ABA_ACESSO = { inicio: "inicio", rank: "combustivel", alertas: "combustivel", veiculos: "veiculos", historico: "historico", ocorrencias: "ocorrencias", cruzar: "multas", combustivel: "combustivel", hierarquia: "hierarquia" };
   const listaAcessos = u => String((u && u.acessos) || "").split(",").map(x => x.trim()).filter(Boolean);
   const pode = k => !EU || EU.perfil === "admin" || !listaAcessos(EU).length || listaAcessos(EU).indexOf(k) >= 0;
   function aplicarAcessos() {
@@ -475,6 +477,7 @@
     const nome = bt ? bt.textContent.trim() : "Início";
     $("#topo-titulo").textContent = nome; document.title = nome + " · Frota";
     if (aba === "rank") desenharRanking();
+    if (aba === "alertas") desenharAlertasComb();
   }
 
   // ------------------------------------------------------------------ janela
@@ -1157,31 +1160,94 @@
     ["cobalt", 54], ["corolla", 50], ["renegade", 60], ["compass", 60], ["master", 80], ["ducato", 90], ["sprinter", 75], ["daily", 90], [" up", 50]];
   const tanqueDe = modelo => { const m = " " + sem(modelo); const t = TANQUE.find(x => m.includes(x[0])); return t ? t[1] : 60; };
   // dias com mais de 2 abastecimentos na mesma placa, ou abastecimento acima do tanque
-  function alertasTrans(rows) {
+  // ---------- regras de alerta das transações (iguais à planilha de análise)
+  //  km inválido · consumo < 5 km/l (FROTA/RAC) · 2+ abastecimentos da placa no dia · > 80 L ·
+  //  preço/litro > 15% acima da mediana do mesmo combustível no mesmo estado · aditivado. GMG fora de km, dia e litros.
+  const ehGMG = t => /gerador|\bgmg\b/.test(sem([t.modelo, t.familia, t.placa, t.servico, t.tipo_frota].join(" ")));
+  const precoLitro = t => { const p = n0(numBR(t.vl_litro)); if (p > 0) return p; const l = n0(numBR(t.litros)); return l > 0 ? n0(numBR(t.valor)) / l : 0; };
+  const mediana = l => { const a = l.filter(x => x > 0).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+  function analisarTrans(rows) {
     const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
     const ofi = periodosOficina();
-    const naOfi = t => { const ps = ofi.get(t.placa); if (!ps) return false; const x = new Date(String(t.data).replace(" ", "T")).getTime(); return ps.some(p => x >= p[0] && x < p[1]); };
-    const dias = new Map();
-    rows.filter(t => !ehGerador(t) && !ehPedagio(t)).forEach(t => {
-      const k = t.placa + "|" + String(t.data).slice(0, 10);
-      if (!dias.has(k)) dias.set(k, []);
-      dias.get(k).push(t);
+    const base = rows.filter(t => !ehPedagio(t));
+    // mediana do preço por combustível + UF (usa o mês inteiro, não só o filtro)
+    const grupos = {};
+    base.forEach(t => { const k = String(t.combustivel || "").toUpperCase() + "|" + String(t.uf || "").toUpperCase(); (grupos[k] = grupos[k] || []).push(precoLitro(t)); });
+    const med = {}; Object.keys(grupos).forEach(k => { med[k] = mediana(grupos[k]); });
+    const porDia = {};
+    base.forEach(t => { if (!ehGMG(t)) { const k = t.placa + "|" + String(t.data).slice(0, 10); porDia[k] = (porDia[k] || 0) + 1; } });
+    return base.map(t => {
+      const g = ehGMG(t), km = n0(numBR(t.km_rodados)), l = n0(numBR(t.litros)), kml = l > 0 ? km / l : 0;
+      const v = veic.get(t.placa) || {};
+      const classif = String(t.tipo_frota || v.tipo_frota || "").toUpperCase();
+      const f = {};
+      f.kmInv = !g && !(km > 0 && km <= 1500 && (l <= 0 || kml <= 25));
+      f.consumo = !g && !f.kmInv && l > 0 && kml < 5 && (!classif || /FROTA|RAC/.test(classif));
+      f.dia2 = !g && porDia[t.placa + "|" + String(t.data).slice(0, 10)] >= 2;
+      f.l80 = !g && l > 80;
+      const m = med[String(t.combustivel || "").toUpperCase() + "|" + String(t.uf || "").toUpperCase()];
+      f.preco = m > 0 && precoLitro(t) > m * 1.15;
+      f.aditivado = /aditiv/.test(sem(t.combustivel));
+      const ps = ofi.get(t.placa), x = new Date(String(t.data).replace(" ", "T")).getTime();
+      f.oficina = !!(ps && ps.some(p => x >= p[0] && x < p[1]));
+      return { t, g, km, l, kml, preco: precoLitro(t), medPreco: m, f, alerta: Object.keys(f).some(k => f[k]) };
+    });
+  }
+  const NOMES_ALERTA = { kmInv: "km inválido", consumo: "consumo < 5 km/l", dia2: "2+ no dia", l80: "> 80 L", preco: "preço alto", aditivado: "aditivado", oficina: "carro na oficina" };
+  // por condutor: contagens, pontos e "o que olhar"
+  function alertasPorCondutor(an) {
+    const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
+    const por = new Map();
+    an.forEach(a => {
+      const nome = (a.t.motorista || a.t.responsavel || "").replace(/\s+/g, " ").trim().toUpperCase();
+      if (!nome) return;
+      if (!por.has(nome)) por.set(nome, []);
+      por.get(nome).push(a);
     });
     const out = [];
+    por.forEach((l, nome) => {
+      const c = k => l.filter(a => a.f[k]).length;
+      // hodômetro digitado: o mesmo km rodado repetido em muitos abastecimentos
+      const kms = l.filter(a => !a.g && a.km > 0).map(a => Math.round(a.km));
+      const cnt = {}; kms.forEach(k => { cnt[k] = (cnt[k] || 0) + 1; });
+      const moda = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+      const hodo = moda && cnt[moda] >= 3 && cnt[moda] / l.length >= 0.4 ? { km: Number(moda), n: cnt[moda] } : null;
+      l.forEach(a => { a.hodo = !!(hodo && Math.round(a.km) === hodo.km); });
+      const comAlerta = l.filter(a => a.alerta || a.hodo);
+      const n = { consumo: c("consumo"), kmInv: c("kmInv"), dia2: c("dia2"), l80: c("l80"), preco: c("preco"), aditivado: c("aditivado"), oficina: c("oficina") };
+      const pontos = n.consumo + n.kmInv + n.dia2 + n.l80 * 2 + n.preco + n.aditivado * 0.5 + n.oficina * 2 + (hodo ? hodo.n * 0.5 : 0);
+      const kmV = l.filter(a => !a.g && !a.f.kmInv).reduce((s, a) => s + a.km, 0), litV = l.filter(a => !a.g && !a.f.kmInv).reduce((s, a) => s + a.l, 0);
+      const olhar = [];
+      if (hodo) olhar.push(`Hodômetro digitado: +${fmtN(hodo.km)} km fixo em ${hodo.n} de ${l.length} abast.`);
+      if (n.consumo) olhar.push(`consumo abaixo de 5 km/l em ${n.consumo}`);
+      if (n.dia2) olhar.push(`${n.dia2} abast. em dias com 2+`);
+      if (n.l80) olhar.push(`${n.l80} acima de 80 L`);
+      if (n.preco) olhar.push(`preço alto em ${n.preco}`);
+      if (n.aditivado) olhar.push(`aditivado em ${n.aditivado}`);
+      if (n.kmInv) olhar.push(`km inválido em ${n.kmInv}`);
+      if (n.oficina) olhar.push(`${n.oficina} com o carro na oficina`);
+      const vs = l.map(a => veic.get(a.t.placa) || {});
+      out.push(Object.assign({ nome, gestor: maisFrequente(vs.map(v => v.gestor_operacao)), contrato: maisFrequente(vs.map(v => v.operacao)), abast: l.length, comAlerta: comAlerta.length,
+        pontos, kml: litV ? kmV / litV : null, gasto: l.reduce((s, a) => s + n0(numBR(a.t.valor)), 0), gastoAlerta: comAlerta.reduce((s, a) => s + n0(numBR(a.t.valor)), 0),
+        olhar: olhar.join("; "), hodo, itens: l }, n));
+    });
+    return out;
+  }
+  // consumo de combustível / Início: dias por placa com algum alerta
+  function alertasTrans(rows) {
+    const an = analisarTrans(rows);
+    const dias = new Map();
+    an.forEach(a => { const k = a.t.placa + "|" + String(a.t.data).slice(0, 10); if (!dias.has(k)) dias.set(k, []); dias.get(k).push(a); });
+    const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
+    const out = [];
     dias.forEach((l, k) => {
-      l.sort((a, b) => String(a.data).localeCompare(String(b.data)));
-      const modelo = l[0].modelo || (veic.get(l[0].placa) || {}).modelo || "";
-      const cap = tanqueDe(modelo);
-      const acima = l.filter(t => n0(numBR(t.litros)) > cap * 1.05);
-      const tipos = [];
-      if (l.length > 2) tipos.push(`${l.length} abastecimentos no dia`);
-      if (acima.length) tipos.push(`${acima.length === 1 ? "1 abastecimento" : acima.length + " abastecimentos"} acima do tanque (${cap} L)`);
-      const naOficina = l.filter(naOfi);
-      if (naOficina.length) tipos.push(`🔧 abasteceu com o carro na oficina (${naOficina.length})`);
-      if (!tipos.length) return;
-      out.push({ dia: k.split("|")[1], placa: l[0].placa, modelo, cap, itens: l, n: l.length, acima: acima.length, oficina: naOficina.length, tipos,
-        motoristas: Array.from(new Set(l.map(t => t.motorista || t.responsavel).filter(Boolean))),
-        litros: l.reduce((a, t) => a + n0(numBR(t.litros)), 0), valor: l.reduce((a, t) => a + n0(numBR(t.valor)), 0) });
+      if (!l.some(a => a.alerta)) return;
+      l.sort((a, b) => String(a.t.data).localeCompare(String(b.t.data)));
+      const cont = {}; l.forEach(a => Object.keys(a.f).forEach(f => { if (a.f[f]) cont[f] = (cont[f] || 0) + 1; }));
+      const tipos = Object.keys(cont).map(f => f === "dia2" ? `${l.length} abastecimentos no dia` : `${NOMES_ALERTA[f]}${cont[f] > 1 ? " (" + cont[f] + ")" : ""}`);
+      out.push({ dia: k.split("|")[1], placa: l[0].t.placa, modelo: l[0].t.modelo || (veic.get(l[0].t.placa) || {}).modelo || "", itens: l.map(a => Object.assign({ _a: a }, a.t)),
+        n: l.length, dia2: !!cont.dia2, acima: cont.l80 || 0, oficina: cont.oficina || 0, tipos, motoristas: Array.from(new Set(l.map(a => a.t.motorista || a.t.responsavel).filter(Boolean))),
+        litros: l.reduce((s, a) => s + a.l, 0), valor: l.reduce((s, a) => s + n0(numBR(a.t.valor)), 0) });
     });
     return out.sort((a, b) => b.dia.localeCompare(a.dia) || a.placa.localeCompare(b.placa));
   }
@@ -1202,20 +1268,20 @@
     const rows = transFiltradas(mes, { g: fcb.gestor, ct: fcb.contrato, cc: fcb.cc, busca: fcb.busca });
     caixa.hidden = !TRANS_C[mes].length;
     const al = alertasTrans(rows);
-    const mais2 = al.filter(a => a.n > 2).length, acima = al.reduce((s, a) => s + a.acima, 0);
+    const mais2 = al.filter(a => a.dia2).length, acima = al.reduce((s, a) => s + a.acima, 0);
     $("#cb-trans-info").textContent = `${nomeMes(mes)} · ${rows.length} abastecimentos · ${fmtN(rows.reduce((s, t) => s + n0(numBR(t.litros)), 0))} litros`;
-    $("#cb-trans-kpis").innerHTML = `<span class="chip vermelho">🔴 ${mais2} ${mais2 === 1 ? "dia" : "dias"} com mais de 2 abastecimentos</span><span class="chip laranja">🟠 ${acima} acima do tanque</span>` + (al.some(a => a.oficina) ? `<span class="chip roxo">🔧 ${al.reduce((s, a) => s + (a.oficina || 0), 0)} com o carro na oficina</span>` : "");
-    $("#tb-trans").innerHTML = al.slice(0, 500).map(a => `<tr class="${a.n > 2 ? "tem-alerta" : ""}">
+    $("#cb-trans-kpis").innerHTML = `<span class="chip vermelho">🔴 ${mais2} ${mais2 === 1 ? "dia" : "dias"} com 2+ abastecimentos</span><span class="chip laranja">🟠 ${acima} acima de 80 L</span>` + (al.some(a => a.oficina) ? `<span class="chip roxo">🔧 ${al.reduce((s, a) => s + (a.oficina || 0), 0)} com o carro na oficina</span>` : "");
+    $("#tb-trans").innerHTML = al.slice(0, 500).map(a => `<tr class="${a.dia2 ? "tem-alerta" : ""}">
       <td>${a.dia.split("-").reverse().join("/")}</td><td><b>${esc(a.placa)}</b><small class="resp">${esc(a.modelo)}</small></td>
       <td class="cond">${esc(a.motoristas.join(" / ") || "—")}</td><td class="num"><b>${a.n}</b></td><td class="num">${fmtN(a.litros, 2)}</td><td class="num">${fmtN(a.valor, 2)}</td>
-      <td class="det">${a.itens.map(t => `<span class="${n0(numBR(t.litros)) > a.cap * 1.05 ? "acima" : ""}">${esc(String(t.data).slice(11, 16))} · ${fmtN(n0(numBR(t.litros)), 2)} L · ${esc(t.estabelecimento || "")}${t.cidade ? " (" + esc(t.cidade) + ")" : ""}</span>`).join("")}</td>
+      <td class="det">${a.itens.map(t => `<span class="${t._a && t._a.alerta ? "acima" : ""}">${esc(String(t.data).slice(11, 16))} · ${fmtN(n0(numBR(t.litros)), 2)} L · ${esc(t.estabelecimento || "")}${t.cidade ? " (" + esc(t.cidade) + ")" : ""}</span>`).join("")}</td>
       <td class="alerta-txt">${a.tipos.map(esc).join("<br>")}</td></tr>`).join("") || '<tr><td colspan="8" class="info">Nenhum alerta nesse período. 👍</td></tr>';
   }
   // ---------- Gasto x Km rodado por técnico (transações do mês, sem abastecimento de gerador)
   const ehGerador = t => /gerador/.test(sem([t.modelo, t.familia, t.placa, t.servico].join(" ")));
   const ehPedagio = t => /pedag/.test(sem(t.servico));
-  // km válido: km rodado > 0, até 1.500 km por abastecimento e km/L entre 3 e 25
-  const kmValido = t => { const km = n0(numBR(t.km_rodados)), l = n0(numBR(t.litros)); return km > 0 && km <= 1500 && l > 0 && km / l >= 3 && km / l <= 25; };
+  // km válido (mesma regra dos alertas): maior que 0, até 1.500 km e no máximo 25 km/L
+  const kmValido = t => { const km = n0(numBR(t.km_rodados)), l = n0(numBR(t.litros)); return km > 0 && km <= 1500 && l > 0 && km / l <= 25; };
   const maisFrequente = l => { const c = {}; l.filter(Boolean).forEach(x => { c[x] = (c[x] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || ""; };
   function rankingTecnicos(rows) {
     const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
@@ -1236,14 +1302,18 @@
       const val = o.ts.filter(kmValido);
       const litros = o.ts.reduce((a, t) => a + n0(numBR(t.litros)), 0), gasto = o.ts.reduce((a, t) => a + n0(numBR(t.valor)), 0);
       const kmV = val.reduce((a, t) => a + n0(numBR(t.km_rodados)), 0), litV = val.reduce((a, t) => a + n0(numBR(t.litros)), 0), gastoV = val.reduce((a, t) => a + n0(numBR(t.valor)), 0);
-      out.push({ nome: o.nome, contrato: maisFrequente(vs.map(v => v.operacao)), gestor: maisFrequente(vs.map(v => v.gestor_operacao)),
+      // combustíveis que o técnico usou, com a parte de cada um nos litros (ex.: Etanol 80% · Gasolina 20%)
+      const porC = {}; o.ts.forEach(t => { const c = String(t.combustivel || "").trim().toUpperCase() || "NÃO INFORMADO"; porC[c] = (porC[c] || 0) + n0(numBR(t.litros)); });
+      const combs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]);
+      const combTxt = combs.map(c => combs.length > 1 && litros ? `${c.charAt(0) + c.slice(1).toLowerCase()} ${Math.round(porC[c] / litros * 100)}%` : c.charAt(0) + c.slice(1).toLowerCase()).join(" · ");
+      out.push({ nome: o.nome, combs, combTxt, contrato: maisFrequente(vs.map(v => v.operacao)), gestor: maisFrequente(vs.map(v => v.gestor_operacao)),
         classif: maisFrequente(o.ts.map(t => t.tipo_frota).concat(vs.map(v => v.tipo_frota))), abast: o.ts.length, litros, gasto, kmV,
         kml: litV ? kmV / litV : null, gastoV, rskm: kmV ? gastoV / kmV : null, inval: o.ts.length - val.length, pctInval: (o.ts.length - val.length) / o.ts.length * 100, ped: o.ped });
     });
     return out.sort((a, b) => b.gasto - a.gasto);
   }
   // tela própria: filtros, ordem pela coluna clicada (sempre do maior para o menor)
-  const frk = { mes: "", gestor: "", contrato: "", busca: "", ord: "gasto" };
+  const frk = { mes: "", gestor: "", contrato: "", busca: "", ord: "gasto", comb: "" };
   function desenharRanking() {
     const hoje = new Date(), atual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
     const meses = Array.from(new Set(TRANS_MESES.concat([atual]))).sort().reverse();
@@ -1253,7 +1323,9 @@
     $("#rk-msg").textContent = TRANS_C[frk.mes].length ? "" : "Sem transações nesse mês. Suba a base de transações em Consumo de combustível.";
     frk.gestor = opSel("#rk-gestor", gestoresDo($("#rk-contrato").value), "Todos os gestores");
     frk.contrato = opSel("#rk-contrato", contratosDo(frk.gestor), "Todos os contratos");
-    const rows = transFiltradas(frk.mes, { g: frk.gestor, ct: frk.contrato });
+    const todasRows = transFiltradas(frk.mes, { g: frk.gestor, ct: frk.contrato });
+    frk.comb = opSel("#rk-comb", Array.from(new Set(todasRows.filter(t => !ehGerador(t) && !ehPedagio(t)).map(t => String(t.combustivel || "").trim().toUpperCase()).filter(Boolean))).sort(), "Todos os combustíveis");
+    const rows = frk.comb ? todasRows.filter(t => ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb) : todasRows;
     let r = rankingTecnicos(rows);
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
     const val = (x, k) => x[k] == null ? -Infinity : x[k];
@@ -1264,28 +1336,128 @@
     const ped = r.some(x => x.ped);
     $("#cb-rank-info").textContent = `${r.length} técnicos · R$/km mediano ${fmtN(med, 2)}`;
     const th = (k, t) => `<th class="num${frk.ord === k ? " ord" : ""}" data-k="${k}">${t}</th>`;
-    $("#cb-rank-cab").innerHTML = `<tr><th class="num">#</th><th>Técnico</th><th>Contrato principal</th><th>Gestor</th><th>Classif.</th>${th("abast", "Abast.")}${th("litros", "Litros")}${th("gasto", "Valor gasto")}
+    $("#cb-rank-cab").innerHTML = `<tr><th class="num">#</th><th>Técnico</th><th>Contrato principal</th><th>Gestor</th><th>Classif.</th><th>Combustível</th>${th("abast", "Abast.")}${th("litros", "Litros")}${th("gasto", "Valor gasto")}
       ${th("kmV", "Km rodado (válido)")}${th("kml", "Km/L")}${th("gastoV", "Valor c/ km válido")}${th("rskm", "R$ por km")}${th("inval", "Abast. c/ km inválido")}${th("pctInval", "% abast. c/ km inválido")}${ped ? th("ped", "Pedágio") : ""}</tr>`;
     $$("#cb-rank-cab th[data-k]").forEach(h => h.addEventListener("click", () => { frk.ord = h.dataset.k; desenharRanking(); }));
-    $("#tb-rank").innerHTML = r.map((x, i) => `<tr><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.contrato)}</td><td>${esc(x.gestor)}</td><td>${esc(x.classif)}</td>
+    $("#tb-rank").innerHTML = r.map((x, i) => `<tr><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.contrato)}</td><td>${esc(x.gestor)}</td><td>${esc(x.classif)}</td><td class="comb-txt">${esc(x.combTxt)}</td>
       <td class="num">${x.abast}</td><td class="num">${fmtN(x.litros)}</td>
       <td class="num barra-fundo" style="--p:${maxG ? x.gasto / maxG * 100 : 0}%;--c:#fdba74">R$ ${fmtN(x.gasto, 2)}</td>
       <td class="num barra-fundo" style="--p:${maxK ? x.kmV / maxK * 100 : 0}%;--c:#93c5fd">${fmtN(x.kmV)}</td>
       <td class="num">${fmtN(x.kml, 2)}</td><td class="num">R$ ${fmtN(x.gastoV, 2)}</td>
       <td class="num" style="background:${corRsKm(x.rskm)};font-weight:700">${x.rskm == null ? "-" : "R$ " + fmtN(x.rskm, 2)}</td>
       <td class="num">${x.inval || "-"}</td><td class="num">${x.inval ? fmtN(x.pctInval, 1) + "%" : "-"}</td>${ped ? `<td class="num">${x.ped ? "R$ " + fmtN(x.ped, 2) : "-"}</td>` : ""}</tr>`).join("")
-      || `<tr><td colspan="15" class="info">Nenhum técnico com esse filtro.</td></tr>`;
+      || `<tr><td colspan="16" class="info">Nenhum técnico com esse filtro.</td></tr>`;
     RANK_ATUAL = { mes: frk.mes, r, ped };
+    desenharPorGestor(frk.mes, todasRows);
+  }
+  // por gestor: mês escolhido x mesmo período do mês anterior (do dia 1 até o último dia com transação no mês)
+  const mesAnterior = m => { const [a, b] = m.split("-").map(Number); return b === 1 ? `${a - 1}-12` : `${a}-${String(b - 1).padStart(2, "0")}`; };
+  function desenharPorGestor(mes, rows) {
+    const ant = mesAnterior(mes);
+    if (!TRANS_C[ant]) garantirTrans(ant, () => { if (!$("#aba-rank").hidden) desenharRanking(); });
+    const sem_ped = l => l.filter(t => !ehPedagio(t));
+    const atual = sem_ped(rows);
+    const ultDia = atual.reduce((m, t) => Math.max(m, Number(String(t.data).slice(8, 10)) || 0), 0);
+    const anterior = sem_ped(transFiltradas(ant, { g: frk.gestor, ct: frk.contrato })).filter(t => (Number(String(t.data).slice(8, 10)) || 0) <= ultDia);
+    const alertaSet = new Set(analisarTrans(rows).filter(a => a.alerta).map(a => a.t));
+    const gestorDe = t => dono(t.placa).gestor || "Sem gestor (placa fora da base)";
+    const g = {};
+    const soma = (l, campo) => { l.forEach(t => { const k = gestorDe(t); g[k] = g[k] || { ab: 0, l: 0, v: 0, va: 0, al: 0 }; if (campo === "v") { g[k].ab++; g[k].l += n0(numBR(t.litros)); g[k].v += n0(numBR(t.valor)); if (alertaSet.has(t)) g[k].al++; } else g[k].va += n0(numBR(t.valor)); }); };
+    soma(atual, "v"); soma(anterior, "va");
+    const tot = Object.values(g).reduce((s, x) => s + x.v, 0);
+    const lista = Object.keys(g).filter(k => g[k].v || g[k].va).sort((a, b) => g[b].v - g[a].v);
+    const maxV = Math.max(0, ...lista.map(k => g[k].v));
+    const dd = String(ultDia || 0).padStart(2, "0"), per = `(01–${dd})`;
+    const nm = m => nomeMes(m).split("/")[0].replace(/^./, c => c.toUpperCase());
+    const temAnt = (TRANS_C[ant] || []).length > 0;
+    $("#rk-ges-info").textContent = `${lista.length} gestores · ${nm(mes)} ${per}` + (temAnt ? ` x ${nm(ant)} ${per}` : "");
+    $("#rk-ges-cab").innerHTML = `<tr><th class="num">#</th><th>Gestor</th><th class="num">Abast.</th><th class="num">Litros</th><th class="num">Valor ${nm(mes)} ${per}</th><th class="num">% do total</th>
+      <th class="num">Valor ${nm(ant)} ${per}</th><th class="num">Variação R$</th><th class="num">Variação %</th><th class="num">Abast. c/ alerta</th></tr>`;
+    $("#tb-rk-ges").innerHTML = lista.map((k, i) => { const x = g[k], dv = x.v - x.va, dp = x.va ? dv / x.va * 100 : null;
+      return `<tr><td class="num">${i + 1}</td><td><b>${esc(k)}</b></td><td class="num">${x.ab.toLocaleString("pt-BR")}</td><td class="num">${fmtN(x.l)}</td>
+      <td class="num barra-fundo" style="--p:${maxV ? x.v / maxV * 100 : 0}%;--c:#fdba74">R$ ${fmtN(x.v, 2)}</td><td class="num">${tot ? fmtN(x.v / tot * 100, 1) + "%" : "-"}</td>
+      <td class="num ant">${temAnt ? "R$ " + fmtN(x.va, 2) : "-"}</td>
+      <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt ? (dv < 0 ? "-" : "") + "R$ " + fmtN(Math.abs(dv), 2) : "-"}</td>
+      <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt && dp != null ? fmtN(dp, 1) + "%" : "-"}</td><td class="num">${x.al || "-"}</td></tr>`; }).join("") || '<tr><td colspan="10" class="info">Sem transações.</td></tr>';
+    $("#rk-ges-nota").textContent = temAnt ? `Comparação com o mesmo período de ${nm(ant)} (01 a ${dd}). Variação positiva = gastou mais que em ${nm(ant)}.`
+      : `Para comparar com ${nm(ant)}, suba a base de transações de ${nomeMes(ant)} no botão "Subir transações (qualquer mês)".`;
   }
   $("#rk-mes").addEventListener("change", e => { frk.mes = e.target.value; desenharRanking(); });
+  $("#arq-trans-rk").addEventListener("change", async e => {
+    const arqs = Array.from(e.target.files || []); e.target.value = "";
+    const caixa = $("#rk-msgs"); caixa.innerHTML = "";
+    for (const arq of arqs) { const el = document.createElement("p"); el.className = "msg"; caixa.appendChild(el); await subirArquivoComb(arq, el); }
+    desenharRanking();
+  });
   $("#rk-gestor").addEventListener("change", () => desenharRanking());
   $("#rk-contrato").addEventListener("change", () => desenharRanking());
+  $("#rk-comb").addEventListener("change", () => desenharRanking());
   $("#rk-busca").addEventListener("input", e => { frk.busca = sem(e.target.value); desenharRanking(); });
   let RANK_ATUAL = null;
+  // ---------- aba Alertas de combustível (por condutor)
+  const fal = { mes: "", busca: "", ord: "gasto", so: true, aberto: "" };
+  let AL_ATUAL = null;
+  function desenharAlertasComb() {
+    const hoje = new Date(), atual = hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0");
+    const meses = Array.from(new Set(TRANS_MESES.concat([atual]))).sort().reverse();
+    if (!fal.mes) fal.mes = meses.find(m => TRANS_C[m] && TRANS_C[m].length) || meses[0];
+    $("#al-mes").innerHTML = meses.map(m => `<option value="${m}">${nomeMes(m)}</option>`).join(""); $("#al-mes").value = fal.mes;
+    if (!TRANS_C[fal.mes]) { $("#al-msg").textContent = "Carregando as transações…"; garantirTrans(fal.mes, desenharAlertasComb); return; }
+    $("#al-msg").textContent = TRANS_C[fal.mes].length ? "" : "Sem transações nesse mês. Suba a base de transações.";
+    const g = opSel("#al-gestor", gestoresDo($("#al-contrato").value), "Todos os gestores");
+    const ct = opSel("#al-contrato", contratosDo(g), "Todos os contratos");
+    const an = analisarTrans(transFiltradas(fal.mes, { g, ct }));
+    let l = alertasPorCondutor(an);
+    const tot = { consumo: 0, kmInv: 0, dia2: 0, l80: 0, preco: 0, aditivado: 0, oficina: 0 };
+    l.forEach(x => Object.keys(tot).forEach(k => { tot[k] += x[k]; }));
+    const totAl = l.reduce((s, x) => s + x.comAlerta, 0), totAb = l.reduce((s, x) => s + x.abast, 0);
+    $("#al-chips").innerHTML = `<span class="chip vermelho">${totAl} de ${totAb} abastecimentos com alerta</span>` + Object.keys(tot).filter(k => tot[k]).map(k => `<span class="chip laranja">${esc(NOMES_ALERTA[k])}: ${tot[k]}</span>`).join("")
+      + `<span class="chip">R$ ${fmtN(l.reduce((s, x) => s + x.gastoAlerta, 0), 2)} em abastecimentos com alerta</span>`;
+    if (fal.so) l = l.filter(x => x.comAlerta);
+    if (fal.busca) l = l.filter(x => sem([x.nome, x.gestor, x.contrato].join(" ")).includes(fal.busca));
+    const vv = (x, k) => x[k] == null ? -Infinity : x[k];
+    l.sort((a, b) => vv(b, fal.ord) - vv(a, fal.ord));
+    const maxP = Math.max(1, ...l.map(x => x.pontos));
+    const th = (k, t) => `<th class="num${fal.ord === k ? " ord" : ""}" data-k="${k}">${t}</th>`;
+    $("#al-cab").innerHTML = `<tr><th class="num">#</th><th>Condutor</th><th>Gestor</th>${th("abast", "Abast.")}${th("comAlerta", "Abast. c/ alerta")}${th("consumo", "Consumo &lt; 5 km/l")}${th("kmInv", "Km inválido")}
+      ${th("dia2", "2+ no dia")}${th("l80", "&gt; 80 L")}${th("preco", "Preço alto")}${th("aditivado", "Aditivado")}${th("pontos", "Pontos")}${th("kml", "Km/l")}${th("gasto", "Valor gasto")}${th("gastoAlerta", "Valor c/ alerta")}<th>O que olhar</th></tr>`;
+    $$("#al-cab th[data-k]").forEach(h => h.addEventListener("click", () => { fal.ord = h.dataset.k; desenharAlertasComb(); }));
+    const n0s = v => v ? `<b style="color:#b91c1c">${v}</b>` : "-";
+    $("#al-info").textContent = `${nomeMes(fal.mes)} · ${l.length} condutores`;
+    $("#tb-al").innerHTML = l.map((x, i) => `<tr class="clica${x.comAlerta ? " tem-alerta" : ""}" data-nome="${esc(x.nome)}"><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.gestor)}</td>
+      <td class="num">${x.abast}</td><td class="num">${n0s(x.comAlerta)}</td><td class="num">${n0s(x.consumo)}</td><td class="num">${n0s(x.kmInv)}</td><td class="num">${n0s(x.dia2)}</td>
+      <td class="num">${n0s(x.l80)}</td><td class="num">${n0s(x.preco)}</td><td class="num">${n0s(x.aditivado)}</td>
+      <td class="num pontos barra-fundo" style="--p:${x.pontos / maxP * 100}%;--c:#fdba74">${fmtN(x.pontos, 1)}</td><td class="num">${fmtN(x.kml, 2)}</td>
+      <td class="num">R$ ${fmtN(x.gasto, 2)}</td><td class="num">R$ ${fmtN(x.gastoAlerta, 2)}</td><td class="olhar">${esc(x.olhar)}</td></tr>`
+      + (fal.aberto === x.nome ? `<tr class="det-al"><td></td><td colspan="15">${x.itens.filter(a => a.alerta || a.hodo).sort((a, b) => String(a.t.data).localeCompare(String(b.t.data))).map(a =>
+        `${esc(String(a.t.data).slice(8, 10) + "/" + String(a.t.data).slice(5, 7) + " " + String(a.t.data).slice(11, 16))} · <b>${esc(a.t.placa)}</b> · ${fmtN(a.l, 2)} L · ${fmtN(a.km)} km (${fmtN(a.kml, 2)} km/l) · R$ ${fmtN(a.preco, 2)}/L · ${esc(a.t.estabelecimento || "")} ${esc(a.t.uf || "")} → <b style="color:#b91c1c">${Object.keys(a.f).filter(k => a.f[k]).map(k => NOMES_ALERTA[k]).concat(a.hodo ? ["hodômetro fixo"] : []).join(", ")}</b>`).join("<br>")}</td></tr>` : "")).join("")
+      || '<tr><td colspan="16" class="info">Nenhum condutor com alerta nesse filtro. 👍</td></tr>';
+    AL_ATUAL = { mes: fal.mes, l };
+  }
+  $("#tb-al").addEventListener("click", e => { const tr = e.target.closest("tr[data-nome]"); if (!tr) return; fal.aberto = fal.aberto === tr.dataset.nome ? "" : tr.dataset.nome; desenharAlertasComb(); });
+  $("#al-mes").addEventListener("change", e => { fal.mes = e.target.value; desenharAlertasComb(); });
+  $("#al-gestor").addEventListener("change", () => desenharAlertasComb());
+  $("#al-contrato").addEventListener("change", () => desenharAlertasComb());
+  $("#al-busca").addEventListener("input", e => { fal.busca = sem(e.target.value); desenharAlertasComb(); });
+  $("#al-so").addEventListener("change", e => { fal.so = e.target.checked; desenharAlertasComb(); });
+  $("#bt-al-exp").addEventListener("click", () => {
+    if (!AL_ATUAL) return;
+    const r2 = v => v == null ? null : Math.round(v * 100) / 100;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(AL_ATUAL.l.map((x, i) => ({ "#": i + 1, "Condutor": x.nome, "Gestor": x.gestor, "Abast.": x.abast, "Abast. c/ alerta": x.comAlerta,
+      "Consumo < 5 km/l": x.consumo, "Km inválido": x.kmInv, "2+ no dia": x.dia2, "> 80 L": x.l80, "Preço alto": x.preco, "Aditivado": x.aditivado, "Pontos": r2(x.pontos), "Km/l": r2(x.kml),
+      "Valor gasto": r2(x.gasto), "Valor c/ alerta": r2(x.gastoAlerta), "O que olhar": x.olhar }))), "Por condutor");
+    const det = [];
+    AL_ATUAL.l.forEach(x => x.itens.filter(a => a.alerta || a.hodo).forEach(a => det.push({ "Data": a.t.data, "Condutor": x.nome, "Placa": a.t.placa, "Combustível": a.t.combustivel, "Litros": r2(a.l),
+      "Km rodado": a.km, "Km/l": r2(a.kml), "R$/litro": r2(a.preco), "Mediana R$/litro (combustível + UF)": r2(a.medPreco), "Valor": r2(n0(numBR(a.t.valor))), "Posto": a.t.estabelecimento, "UF": a.t.uf,
+      "Alertas": Object.keys(a.f).filter(k => a.f[k]).map(k => NOMES_ALERTA[k]).concat(a.hodo ? ["hodômetro fixo"] : []).join(", ") })));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det.length ? det : [{ "Data": "" }]), "Abastecimentos com alerta");
+    XLSX.writeFile(wb, `Alertas_combustivel_${AL_ATUAL.mes}.xlsx`);
+  });
   $("#bt-rank-exp").addEventListener("click", () => {
     if (!RANK_ATUAL) return;
     const r2 = v => v == null ? null : Math.round(v * 100) / 100;
-    const ws = XLSX.utils.json_to_sheet(RANK_ATUAL.r.map((x, i) => Object.assign({ "#": i + 1, "Técnico": x.nome, "Contrato principal": x.contrato, "Gestor": x.gestor, "Classif.": x.classif,
+    const ws = XLSX.utils.json_to_sheet(RANK_ATUAL.r.map((x, i) => Object.assign({ "#": i + 1, "Técnico": x.nome, "Contrato principal": x.contrato, "Gestor": x.gestor, "Classif.": x.classif, "Combustível": x.combTxt,
       "Abast.": x.abast, "Litros": r2(x.litros), "Valor gasto": r2(x.gasto), "Km rodado (válido)": x.kmV, "Km/L": r2(x.kml), "Valor c/ km válido": r2(x.gastoV), "R$ por km": r2(x.rskm),
       "Abast. c/ km inválido": x.inval, "% abast. c/ km inválido": r2(x.pctInval) }, RANK_ATUAL.ped ? { "Pedágio": r2(x.ped) } : {})));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Gasto x Km por técnico"); XLSX.writeFile(wb, `Gasto_x_Km_tecnico_${RANK_ATUAL.mes}.xlsx`);
@@ -1338,7 +1510,7 @@
     const meses = Array.from(new Set(regs.map(r => r.mes)));
     meses.forEach(mm => { delete TRANS_C[mm]; });
     const al = alertasTrans(regs);
-    msg(el, `✓ Transações: ${regs.length} abastecimentos (${novos} novos${rep ? ", " + rep + " já estavam gravados" : ""}) de ${meses.map(nomeMes).join(", ")} · ${al.filter(a => a.n > 2).length} ${al.filter(a => a.n > 2).length === 1 ? "dia" : "dias"} com mais de 2 abastecimentos · ${al.reduce((s, a) => s + a.acima, 0)} acima do tanque.`, "ok");
+    msg(el, `✓ Transações: ${regs.length} abastecimentos (${novos} novos${rep ? ", " + rep + " já estavam gravados" : ""}) de ${meses.map(nomeMes).join(", ")} · ${al.filter(a => a.dia2).length} ${al.filter(a => a.dia2).length === 1 ? "dia" : "dias"} com 2+ abastecimentos · ${al.reduce((s, a) => s + a.acima, 0)} acima de 80 L.`, "ok");
     if (!fcb.mes || meses.indexOf(fcb.mes) < 0) fcb.mes = fcb.mes || meses.sort().pop();
     desenharTrans(); desenharInicio();
   }
