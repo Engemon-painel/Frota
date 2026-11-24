@@ -1452,7 +1452,7 @@
   // km válido (mesma regra dos alertas): maior que 0, até 1.500 km e no máximo 25 km/L
   const kmValido = t => { const km = n0(numBR(t.km_rodados)), l = n0(numBR(t.litros)); return km > 0 && km <= 1500 && l > 0 && km / l <= 25; };
   const maisFrequente = l => { const c = {}; l.filter(Boolean).forEach(x => { c[x] = (c[x] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || ""; };
-  function rankingTecnicos(rows) {
+  function rankingTecnicos(rows, comGerador) {
     const veic = new Map(TODOS.veic.map(v => [v.placa, v]));
     const por = new Map();
     rows.forEach(t => {
@@ -1461,7 +1461,7 @@
       if (!por.has(nome)) por.set(nome, { nome, ts: [], ped: 0 });
       const o = por.get(nome);
       if (ehPedagio(t)) { o.ped += n0(numBR(t.valor)); return; }
-      if (ehGerador(t)) return;
+      if (ehGerador(t) && !comGerador) return;
       o.ts.push(t);
     });
     const out = [];
@@ -1495,8 +1495,19 @@
     const todasRows = transFiltradas(frk.mes, { g: frk.gestor, ct: frk.contrato });
     // lista todos os combustíveis que existem na base do mês (mesmo os que só aparecem em outro contrato, equipe ou gerador)
     frk.comb = opSel("#rk-comb", Array.from(new Set((TRANS_C[frk.mes] || []).filter(t => !ehPedagio(t)).map(t => String(t.combustivel || "").trim().toUpperCase()).filter(Boolean))).sort(), "Todos os combustíveis");
-    const rows = frk.comb ? todasRows.filter(t => ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb) : todasRows;
-    let r = rankingTecnicos(rows);
+    // NOVO (24/11/2026): filtro pela coluna NUMERO FROTA da Ticket Log (ex.: GMG); vazio aparece como "Vazio"
+    const nrF = t => String(t.nr_frota || "").trim().toUpperCase();
+    const doMes = (TRANS_C[frk.mes] || []).filter(t => !ehPedagio(t));
+    const temNr = doMes.some(t => nrF(t));
+    const opsF = Array.from(new Set(doMes.map(nrF).filter(Boolean))).sort();
+    const selF = $("#rk-frota"), vF = selF.value;
+    selF.innerHTML = '<option value="">Número frota: todos</option>' + opsF.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (temNr && doMes.some(t => !nrF(t)) ? '<option value="__vazio__">Vazio</option>' : "");
+    selF.value = Array.from(selF.options).some(o => o.value === vF) ? vF : "";
+    selF.title = temNr ? "" : "As transações gravadas ainda não têm a coluna NUMERO FROTA: suba de novo a base de transações do mês.";
+    frk.frota = selF.value;
+    const bateF = t => !frk.frota || ehPedagio(t) || (frk.frota === "__vazio__" ? !nrF(t) : nrF(t) === frk.frota);
+    const rows = todasRows.filter(t => bateF(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
+    let r = rankingTecnicos(rows, !!frk.frota);
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
     const val = (x, k) => x[k] == null ? -Infinity : x[k];
     r.sort((a, b) => typeof a[frk.ord] === "string" ? sem(b[frk.ord]).localeCompare(sem(a[frk.ord])) : val(b, frk.ord) - val(a, frk.ord));
@@ -1549,6 +1560,24 @@
       <td class="num ant">${temAnt ? "R$ " + fmtN(x.va, 2) : "-"}</td>
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt ? (dv < 0 ? "-" : "") + "R$ " + fmtN(Math.abs(dv), 2) : "-"}</td>
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt && dp != null ? fmtN(dp, 1) + "%" : "-"}</td><td class="num">${x.al || "-"}</td></tr>`; }).join("") || '<tr><td colspan="10" class="info">Sem transações.</td></tr>';
+    // NOVO (24/11/2026): "Sem gestor" aberto por INFORMACAO ADICIONAL 1 (placas que não estão na base de veículos)
+    const semG = atual.filter(t => !dono(t.placa).gestor);
+    const box = $("#rk-semg");
+    if (box) {
+      if (!semG.length) box.innerHTML = "";
+      else {
+        const temInfo = semG.some(t => String(t.info1 || "").trim());
+        const gi = {};
+        semG.forEach(t => { const k = String(t.info1 || "").trim() || "(sem informação adicional 1)"; const o = gi[k] = gi[k] || { pl: new Set(), ab: 0, v: 0 }; o.pl.add(t.placa); o.ab++; o.v += n0(numBR(t.valor)); });
+        const ks = Object.keys(gi).sort((x, y) => gi[y].v - gi[x].v), tv = semG.reduce((s, t) => s + n0(numBR(t.valor)), 0);
+        box.innerHTML = `<h3 style="margin:18px 0 4px">Sem gestor — por Informação adicional 1 <small class="info">${semG.length} abastecimentos de ${new Set(semG.map(t => t.placa)).size} placas que não estão na base de veículos · passe o mouse em "placas" para ver quais são</small></h3>` +
+          (temInfo ? "" : `<p class="nota">As transações gravadas ainda não têm a coluna INFORMACAO ADICIONAL 1. Suba de novo a base de transações deste mês (botão "Subir transações"): ela preenche essa coluna sem duplicar nada.</p>`) +
+          `<div style="overflow:auto"><table class="tab-rank"><thead><tr><th>Informação adicional 1</th><th class="num">Placas</th><th class="num">Abast.</th><th class="num">Valor</th><th class="num">% do sem gestor</th></tr></thead><tbody>` +
+          ks.map(k => { const o = gi[k], pls = Array.from(o.pl).sort();
+            return `<tr><td><b>${esc(k)}</b></td><td class="num" title="${esc(pls.join(", "))}" style="cursor:help;text-decoration:underline dotted">${pls.length}</td><td class="num">${o.ab}</td><td class="num">R$ ${fmtN(o.v, 2)}</td><td class="num">${tv ? fmtN(o.v / tv * 100, 1) + "%" : "-"}</td></tr>`; }).join("") +
+          `</tbody></table></div>`;
+      }
+    }
     $("#rk-ges-nota").textContent = temAnt ? `Comparação com o mesmo período de ${nm(ant)} (01 a ${dd}). Variação positiva = gastou mais que em ${nm(ant)}.`
       : `Para comparar com ${nm(ant)}, suba a base de transações de ${nomeMes(ant)} no botão "Subir transações (qualquer mês)".`;
   }
@@ -1562,6 +1591,7 @@
   $("#rk-gestor").addEventListener("change", () => desenharRanking());
   $("#rk-contrato").addEventListener("change", () => desenharRanking());
   $("#rk-comb").addEventListener("change", () => desenharRanking());
+  $("#rk-frota").addEventListener("change", () => desenharRanking());
   $("#rk-busca").addEventListener("input", e => { frk.busca = sem(e.target.value); desenharRanking(); });
   let RANK_ATUAL = null;
   // ---------- aba Alertas de combustível (por condutor)
@@ -1650,7 +1680,10 @@
       responsavel: col("responsavel"), cartao: col("numero cartao"), modelo: col("modelo veiculo"), combustivel: col("tipo combustivel"), litros: col("litros"),
       vl_litro: col("vl/litro"), valor: col("valor emissao"), hodometro: col("hodometro ou horimetro"), km_rodados: col("km rodados ou horas trabalhadas"),
       km_litro: col("km/litro ou litros/hora"), estabelecimento: col("nome estabelecimento"), cidade: col("cidade"), uf: col("uf"),
-      servico: col("servico"), tipo_frota: col("tipo frota"), familia: col("familia veiculo") };
+      servico: col("servico"), tipo_frota: col("tipo frota"), familia: col("familia veiculo"),
+      nr_frota: cab.findIndex(h => h === "numero frota" || h === "numero da frota" || h === "nr frota"),
+      // INFORMACAO ADICIONAL 1 (contrato/centro de custo do cartão na Ticket Log) — aceita "adidional" (como vem no arquivo)
+      info1: (() => { const l = cab.map((h, i) => [h, i]).filter(([h]) => /^informac?ao adi/.test(h)); const um = l.find(([h]) => /1$/.test(h)); return um ? um[1] : (l[0] ? l[0][1] : -1); })() };
     if (ix.data < 0 || ix.placa < 0 || ix.litros < 0) return msg(el, "Base de transações sem as colunas DATA TRANSACAO, PLACA ou LITROS.", "erro");
     const dataIso = v => {
       if (typeof v === "number" && v > 20000) { const d = new Date(Math.round((v - 25569) * 86400000)); return d.toISOString().slice(0, 19).replace("T", " "); }
@@ -1668,19 +1701,19 @@
       regs.push({ codigo: txt("codigo"), data, mes: data.slice(0, 7), placa, motorista: txt("motorista"), matricula: txt("matricula"), responsavel: txt("responsavel"),
         cartao: txt("cartao"), modelo: txt("modelo"), combustivel: txt("combustivel"), litros: num("litros"), vl_litro: num("vl_litro"), valor: num("valor"),
         hodometro: num("hodometro"), km_rodados: num("km_rodados"), km_litro: num("km_litro"), estabelecimento: txt("estabelecimento"), cidade: txt("cidade"), uf: txt("uf"),
-        servico: txt("servico"), tipo_frota: txt("tipo_frota"), familia: txt("familia") });
+        servico: txt("servico"), tipo_frota: txt("tipo_frota"), familia: txt("familia"), info1: txt("info1"), nr_frota: txt("nr_frota") });
     });
     if (!regs.length) return msg(el, "Nenhuma transação com placa e data na planilha.", "erro");
-    let novos = 0, rep = 0;
+    let novos = 0, rep = 0, inf = 0;
     for (let i = 0; i < regs.length; i += 500) {
       msg(el, `Enviando transações ${i + 1} a ${Math.min(i + 500, regs.length)} de ${regs.length}…`);
       const r = await api("subir_transacoes", { regs: regs.slice(i, i + 500) });
-      novos += (r.r && r.r.novos) || 0; rep += (r.r && r.r.repetidas) || 0;
+      novos += (r.r && r.r.novos) || 0; rep += (r.r && r.r.repetidas) || 0; inf += (r.r && r.r.info) || 0;
     }
     const meses = Array.from(new Set(regs.map(r => r.mes)));
     meses.forEach(mm => { delete TRANS_C[mm]; });
     const al = alertasTrans(regs);
-    msg(el, `✓ Transações: ${regs.length} abastecimentos (${novos} novos${rep ? ", " + rep + " já estavam gravados" : ""}) de ${meses.map(nomeMes).join(", ")} · ${al.filter(a => a.dia2).length} ${al.filter(a => a.dia2).length === 1 ? "dia" : "dias"} com 2+ abastecimentos · ${al.reduce((s, a) => s + a.acima, 0)} acima de 80 L.`, "ok");
+    msg(el, `✓ Transações: ${regs.length} abastecimentos (${novos} novos${rep ? ", " + rep + " já estavam gravados" : ""}${inf ? ", " + inf + " antigas completadas (Número frota / Informação adicional 1)" : ""}) de ${meses.map(nomeMes).join(", ")} · ${al.filter(a => a.dia2).length} ${al.filter(a => a.dia2).length === 1 ? "dia" : "dias"} com 2+ abastecimentos · ${al.reduce((s, a) => s + a.acima, 0)} acima de 80 L.`, "ok");
     if (!fcb.mes || meses.indexOf(fcb.mes) < 0) fcb.mes = fcb.mes || meses.sort().pop();
     desenharTrans(); desenharInicio();
   }
