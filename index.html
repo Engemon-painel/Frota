@@ -274,6 +274,7 @@
           <select id="rk-gestor"><option value="">Todos os gestores</option></select>
           <select id="rk-contrato"><option value="">Todos os contratos</option></select>
           <select id="rk-comb"><option value="">Todos os combustíveis</option></select>
+          <select id="rk-frota" title="Coluna NUMERO FROTA da Ticket Log (ex.: GMG)"><option value="">Número frota: todos</option></select>
           <input id="rk-busca" type="search" placeholder="Buscar técnico, contrato, gestor…">
           <span id="cb-rank-info" class="info"></span>
         </div>
@@ -281,6 +282,7 @@
         <h2 class="sub-titulo">Por gestor <span class="info" id="rk-ges-info"></span></h2>
         <div class="tabela-caixa cc-caixa"><table class="tabela tab-rank"><thead id="rk-ges-cab"></thead><tbody id="tb-rk-ges"></tbody></table></div>
         <p class="nota" id="rk-ges-nota"></p>
+        <div id="rk-semg"></div>
         <h2 class="sub-titulo">Por técnico</h2>
         <div class="tabela-caixa tab-rank-caixa"><table class="tabela tab-rank"><thead id="cb-rank-cab"></thead><tbody id="tb-rank"></tbody></table></div>
       </div>
@@ -397,6 +399,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=60"></script>
+  <script src="app.js?v=62"></script>
 </body>
 </html>
