@@ -1511,6 +1511,8 @@
       const combs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]);
       const combTxt = combs.map(c => combs.length > 1 && litros ? `${c.charAt(0) + c.slice(1).toLowerCase()} ${Math.round(porC[c] / litros * 100)}%` : c.charAt(0) + c.slice(1).toLowerCase()).join(" · ");
       out.push({ nome: o.nome, combs, combTxt, contrato: maisFrequente(vs.map(v => v.operacao)), gestor: maisFrequente(vs.map(v => v.gestor_operacao)),
+        info1: maisFrequente(o.ts.map(t => String(t.info1 || "").trim()).filter(Boolean)),
+        placas: Array.from(new Set(o.ts.map(t => t.placa))).sort().join(", "),
         classif: maisFrequente(o.ts.map(t => t.tipo_frota).concat(vs.map(v => v.tipo_frota))), abast: o.ts.length, litros, gasto, kmV,
         kml: litV ? kmV / litV : null, gastoV, rskm: kmV ? gastoV / kmV : null, inval: o.ts.length - val.length, pctInval: (o.ts.length - val.length) / o.ts.length * 100, ped: o.ped });
     });
@@ -1558,7 +1560,7 @@
     const bateM = t => !frk.modelo || ehPedagio(t) || tipoCartao(t) === frk.modelo;
     const rows = todasRows.filter(t => bateF(t) && bateM(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
     let r = rankingTecnicos(rows, !!(frk.frota || frk.modelo));
-    if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
+    if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor, x.info1, x.placas].join(" ")).includes(frk.busca));
     const val = (x, k) => x[k] == null ? -Infinity : x[k];
     r.sort((a, b) => typeof a[frk.ord] === "string" ? sem(b[frk.ord]).localeCompare(sem(a[frk.ord])) : val(b, frk.ord) - val(a, frk.ord));
     const maxG = Math.max(0, ...r.map(x => x.gasto)), maxK = Math.max(0, ...r.map(x => x.kmV));
@@ -1567,17 +1569,17 @@
     const ped = r.some(x => x.ped);
     $("#cb-rank-info").textContent = `${r.length} técnicos · R$ ${fmtN(r.reduce((s, x) => s + x.gasto, 0), 2)} · R$/km mediano ${fmtN(med, 2)}`;
     const th = (k, t) => `<th class="num${frk.ord === k ? " ord" : ""}" data-k="${k}">${t}</th>`;
-    $("#cb-rank-cab").innerHTML = `<tr><th class="num">#</th><th>Técnico</th><th>Contrato principal</th><th>Gestor</th><th>Classif.</th><th>Combustível</th>${th("abast", "Abast.")}${th("litros", "Litros")}${th("gasto", "Valor gasto")}
+    $("#cb-rank-cab").innerHTML = `<tr><th class="num">#</th><th>Técnico</th><th>Contrato principal</th><th>Gestor</th><th>Informação adicional 1</th><th>Classif.</th><th>Combustível</th>${th("abast", "Abast.")}${th("litros", "Litros")}${th("gasto", "Valor gasto")}
       ${th("kmV", "Km rodado (válido)")}${th("kml", "Km/L")}${th("gastoV", "Valor c/ km válido")}${th("rskm", "R$ por km")}${th("inval", "Abast. c/ km inválido")}${th("pctInval", "% abast. c/ km inválido")}${ped ? th("ped", "Pedágio") : ""}</tr>`;
     $$("#cb-rank-cab th[data-k]").forEach(h => h.addEventListener("click", () => { frk.ord = h.dataset.k; desenharRanking(); }));
-    $("#tb-rank").innerHTML = r.map((x, i) => `<tr><td class="num">${i + 1}</td><td><b>${esc(x.nome)}</b></td><td>${esc(x.contrato)}</td><td>${esc(x.gestor)}</td><td>${esc(x.classif)}</td><td class="comb-txt">${esc(x.combTxt)}</td>
+    $("#tb-rank").innerHTML = r.map((x, i) => `<tr><td class="num">${i + 1}</td><td><b title="Placas/cartões: ${esc(x.placas)}">${esc(x.nome)}</b></td><td>${esc(x.contrato)}</td><td>${x.gestor ? esc(x.gestor) : '<span class="info">—</span>'}</td><td>${esc(x.info1)}</td><td>${esc(x.classif)}</td><td class="comb-txt">${esc(x.combTxt)}</td>
       <td class="num">${x.abast}</td><td class="num">${fmtN(x.litros)}</td>
       <td class="num barra-fundo" style="--p:${maxG ? x.gasto / maxG * 100 : 0}%;--c:#fdba74">R$ ${fmtN(x.gasto, 2)}</td>
       <td class="num barra-fundo" style="--p:${maxK ? x.kmV / maxK * 100 : 0}%;--c:#93c5fd">${fmtN(x.kmV)}</td>
       <td class="num">${fmtN(x.kml, 2)}</td><td class="num">R$ ${fmtN(x.gastoV, 2)}</td>
       <td class="num" style="background:${corRsKm(x.rskm)};font-weight:700">${x.rskm == null ? "-" : "R$ " + fmtN(x.rskm, 2)}</td>
       <td class="num">${x.inval || "-"}</td><td class="num">${x.inval ? fmtN(x.pctInval, 1) + "%" : "-"}</td>${ped ? `<td class="num">${x.ped ? "R$ " + fmtN(x.ped, 2) : "-"}</td>` : ""}</tr>`).join("")
-      || `<tr><td colspan="16" class="info">Nenhum técnico com esse filtro.</td></tr>`;
+      || `<tr><td colspan="17" class="info">Nenhum técnico com esse filtro.</td></tr>`;
     RANK_ATUAL = { mes: frk.mes, r, ped };
     desenharPorGestor(frk.mes, todasRows);
   }
@@ -1708,7 +1710,7 @@
   $("#bt-rank-exp").addEventListener("click", () => {
     if (!RANK_ATUAL) return;
     const r2 = v => v == null ? null : Math.round(v * 100) / 100;
-    const ws = XLSX.utils.json_to_sheet(RANK_ATUAL.r.map((x, i) => Object.assign({ "#": i + 1, "Técnico": x.nome, "Contrato principal": x.contrato, "Gestor": x.gestor, "Classif.": x.classif, "Combustível": x.combTxt,
+    const ws = XLSX.utils.json_to_sheet(RANK_ATUAL.r.map((x, i) => Object.assign({ "#": i + 1, "Técnico": x.nome, "Contrato principal": x.contrato, "Gestor": x.gestor, "Informação adicional 1": x.info1, "Placas/cartões": x.placas, "Classif.": x.classif, "Combustível": x.combTxt,
       "Abast.": x.abast, "Litros": r2(x.litros), "Valor gasto": r2(x.gasto), "Km rodado (válido)": x.kmV, "Km/L": r2(x.kml), "Valor c/ km válido": r2(x.gastoV), "R$ por km": r2(x.rskm),
       "Abast. c/ km inválido": x.inval, "% abast. c/ km inválido": r2(x.pctInval) }, RANK_ATUAL.ped ? { "Pedágio": r2(x.ped) } : {})));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Gasto x Km por técnico"); XLSX.writeFile(wb, `Gasto_x_Km_tecnico_${RANK_ATUAL.mes}.xlsx`);
