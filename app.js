@@ -1243,25 +1243,42 @@
   // (condutor de algum carro da base; se não, a hierarquia: colaborador → gerente)
   let MOT_MAPA = null, MOT_N = -1, MOT_H = null;
   const chavesMot = s => { const p = sem(s).replace(/[^a-z ]/g, " ").split(/\s+/).filter(x => x && ["de", "da", "do", "das", "dos", "e"].indexOf(x) < 0); return p.length ? [p.join(" "), p.length > 1 ? p[0] + " " + p[p.length - 1] : ""].filter(Boolean) : []; };
+  // pessoas da base de veículos: condutor atual de cada carro e, depois, quem já foi condutor (histórico de trocas)
+  let PESSOAS = null, PES_V = null, PES_H = null;
+  const CACHE_MOT = new Map();
+  function pessoasBase() {
+    if (PESSOAS && PES_V === TODOS.veic && PES_H === TODOS.hist) return PESSOAS;
+    PES_V = TODOS.veic; PES_H = TODOS.hist; PESSOAS = []; CACHE_MOT.clear();
+    const porPlaca = new Map((TODOS.veic || []).map(v => [v.placa, v]));
+    const add = (nome, v, prio) => { if (!nome || !v || !v.gestor_operacao || /coringa|oficina/i.test(nome)) return; const ks = chavesMot(nome); if (!ks[0]) return;
+      PESSOAS.push({ k: ks[0], k2: ks[1] || "", toks: ks[0].split(" "), gestor: v.gestor_operacao, contrato: v.operacao || "", prio }); };
+    (TODOS.veic || []).forEach(v => add(v.condutor, v, 1));
+    (TODOS.hist || []).forEach(h => add(h.condutor, porPlaca.get(h.placa), 2));
+    return PESSOAS;
+  }
+  // devolve o gestor só se todos os candidatos (da melhor prioridade) forem do mesmo gestor
+  function unico(cands) {
+    if (!cands.length) return null;
+    const p = Math.min(...cands.map(c => c.prio)), l = cands.filter(c => c.prio === p);
+    const gs = Array.from(new Set(l.map(c => c.gestor)));
+    return gs.length === 1 ? { gestor: l[0].gestor, contrato: l[0].contrato, via: "motorista" } : null;
+  }
   function donoPorMotorista(nome) {
     if (!nome) return null;
-    if (MOT_N !== VEICULOS.length || MOT_H !== TODOS.hier) {
-      MOT_MAPA = new Map(); MOT_N = VEICULOS.length; MOT_H = TODOS.hier;
-      const pon = (k, d) => { if (!MOT_MAPA.has(k)) MOT_MAPA.set(k, d); else if (MOT_MAPA.get(k) && MOT_MAPA.get(k).gestor !== d.gestor) MOT_MAPA.set(k, null); };
-      VEICULOS.filter(v => v.condutor && v.gestor_operacao).forEach(v => chavesMot(v.condutor).forEach(k => pon(k, { gestor: v.gestor_operacao, contrato: v.operacao || "", via: "motorista" })));
-      (TODOS.hier || []).filter(h => h.colaborador && h.gerente).forEach(h => chavesMot(h.colaborador).forEach(k => { if (!MOT_MAPA.has(k)) MOT_MAPA.set(k, { gestor: h.gerente, contrato: "", via: "hierarquia" }); }));
+    const ps = pessoasBase();
+    const ck = sem(nome) + "|" + ps.length;
+    if (CACHE_MOT.has(ck)) return CACHE_MOT.get(ck);
+    const ks = chavesMot(nome); let r = null;
+    if (ks[0]) {
+      const toks = ks[0].split(" ");
+      r = unico(ps.filter(p => p.k === ks[0]))                                                     // 1) nome igual
+        || (ks[1] ? unico(ps.filter(p => p.k2 === ks[1])) : null)                                  // 2) primeiro + último nome
+        || (ks[0].length >= 12 ? unico(ps.filter(p => p.k.length >= 12 && (p.k.indexOf(ks[0]) === 0 || ks[0].indexOf(p.k) === 0))) : null)   // 3) nome cortado
+        || (toks.length >= 2 ? unico(ps.filter(p => p.toks[0] === toks[0] &&                         // 4) mesmo primeiro nome + 2 sobrenomes em comum
+             toks.slice(1).filter(t => t.length >= 3 && p.toks.slice(1).some(x => x === t || (t.length >= 4 && x.indexOf(t) === 0) || (x.length >= 4 && t.indexOf(x) === 0))).length >= Math.min(2, toks.length - 1, p.toks.length - 1))) : null);
     }
-    const ks = chavesMot(nome);
-    const achou = (ks[0] && MOT_MAPA.get(ks[0])) || (ks[1] && MOT_MAPA.get(ks[1]));
-    if (achou || !ks[0]) return achou || null;
-    // nome cortado (a Ticket Log corta em ~30 letras, ex.: "PAULO HENRIQUE FLORENCIO DE SO"):
-    // um nome começa com o outro → vale, se for de um só gestor
-    if (ks[0].length >= 12) {
-      const cands = VEICULOS.filter(v => v.condutor && v.gestor_operacao).filter(v => { const c = chavesMot(v.condutor)[0] || ""; return c.length >= 12 && (c.indexOf(ks[0]) === 0 || ks[0].indexOf(c) === 0); });
-      const gs = Array.from(new Set(cands.map(v => v.gestor_operacao)));
-      if (gs.length === 1) { const v = cands[0]; return { gestor: v.gestor_operacao, contrato: v.operacao || "", via: "motorista" }; }
-    }
-    return null;
+    CACHE_MOT.set(ck, r);
+    return r;
   }
   // ALTERADO (25/11/2026): o gestor do abastecimento vem SÓ pelo NOME DO MOTORISTA (condutor de um carro da base),
   // não pela placa — cartão coringa (ex.: COR0291) não está na base e o técnico, sim.
