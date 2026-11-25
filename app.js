@@ -1239,6 +1239,27 @@
     const v = MAPA_VEIC.get(String(placa || "").toUpperCase()) || null;
     return { v, condutor: v ? (v.condutor || "") : "", gestor: (v && v.gestor_operacao) || (x && x.gestor_operacao) || "", contrato: (v && v.operacao) || (x && x.operacao) || "" };
   }
+  // NOVO (25/11/2026): transação de placa fora da base → acha o gestor pelo NOME DO MOTORISTA
+  // (condutor de algum carro da base; se não, a hierarquia: colaborador → gerente)
+  let MOT_MAPA = null, MOT_N = -1, MOT_H = null;
+  const chavesMot = s => { const p = sem(s).replace(/[^a-z ]/g, " ").split(/\s+/).filter(x => x && ["de", "da", "do", "das", "dos", "e"].indexOf(x) < 0); return p.length ? [p.join(" "), p.length > 1 ? p[0] + " " + p[p.length - 1] : ""].filter(Boolean) : []; };
+  function donoPorMotorista(nome) {
+    if (!nome) return null;
+    if (MOT_N !== VEICULOS.length || MOT_H !== TODOS.hier) {
+      MOT_MAPA = new Map(); MOT_N = VEICULOS.length; MOT_H = TODOS.hier;
+      const pon = (k, d) => { if (!MOT_MAPA.has(k)) MOT_MAPA.set(k, d); else if (MOT_MAPA.get(k) && MOT_MAPA.get(k).gestor !== d.gestor) MOT_MAPA.set(k, null); };
+      VEICULOS.filter(v => v.condutor && v.gestor_operacao).forEach(v => chavesMot(v.condutor).forEach(k => pon(k, { gestor: v.gestor_operacao, contrato: v.operacao || "", via: "motorista" })));
+      (TODOS.hier || []).filter(h => h.colaborador && h.gerente).forEach(h => chavesMot(h.colaborador).forEach(k => { if (!MOT_MAPA.has(k)) MOT_MAPA.set(k, { gestor: h.gerente, contrato: "", via: "hierarquia" }); }));
+    }
+    const ks = chavesMot(nome);
+    return (ks[0] && MOT_MAPA.get(ks[0])) || (ks[1] && MOT_MAPA.get(ks[1])) || null;
+  }
+  function donoTrans(t) {
+    const d = dono(t.placa);
+    if (d.gestor) return d;
+    const m = donoPorMotorista(t.motorista) || donoPorMotorista(t.responsavel);
+    return m ? { v: null, condutor: "", gestor: m.gestor, contrato: d.contrato || m.contrato, via: m.via } : d;
+  }
   const bateDono = (placa, x, g, ct) => { if (!g && !ct) return true; const d = dono(placa, x); return (!g || d.gestor === g) && (!ct || d.contrato === ct); };
   const opSel = (id, lista, todos) => { const el = $(id), v = el.value; el.innerHTML = `<option value="">${todos}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); el.value = lista.indexOf(v) >= 0 ? v : ""; return el.value; };
 
@@ -1440,7 +1461,7 @@
     const veicVis = new Set(VEICULOS.map(v => v.placa));
     const ccCartao = new Map(CARTOES.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
     return rows.filter(t => noEscopo(t.placa) && (!equipeAtiva() || veicVis.has(t.placa))
-      && (!opts || ((!opts.g && !opts.ct) || bateDono(t.placa, null, opts.g, opts.ct)) && (!opts.cc || bateCC(ccCartao.get(t.placa) || "", opts.cc))
+      && (!opts || ((!opts.g && !opts.ct) || (d => (!opts.g || d.gestor === opts.g) && (!opts.ct || d.contrato === opts.ct))(donoTrans(t))) && (!opts.cc || bateCC(ccCartao.get(t.placa) || "", opts.cc))
         && (!opts.busca || sem([t.placa, t.motorista, t.responsavel, t.estabelecimento, t.cidade].join(" ")).includes(opts.busca))));
   }
   function desenharTrans() {
@@ -1481,7 +1502,7 @@
     const out = [];
     por.forEach(o => {
       if (!o.ts.length) return;
-      const vs = o.ts.map(t => veic.get(t.placa) || {});
+      const vs = o.ts.map(t => veic.get(t.placa) || (d => d.gestor ? { gestor_operacao: d.gestor, operacao: d.contrato } : {})(donoTrans(t)));
       const val = o.ts.filter(kmValido);
       const litros = o.ts.reduce((a, t) => a + n0(numBR(t.litros)), 0), gasto = o.ts.reduce((a, t) => a + n0(numBR(t.valor)), 0);
       const kmV = val.reduce((a, t) => a + n0(numBR(t.km_rodados)), 0), litV = val.reduce((a, t) => a + n0(numBR(t.litros)), 0), gastoV = val.reduce((a, t) => a + n0(numBR(t.valor)), 0);
@@ -1559,7 +1580,7 @@
     const ultDia = atual.reduce((m, t) => Math.max(m, Number(String(t.data).slice(8, 10)) || 0), 0);
     const anterior = sem_ped(transFiltradas(ant, { g: frk.gestor, ct: frk.contrato })).filter(t => (Number(String(t.data).slice(8, 10)) || 0) <= ultDia);
     const alertaSet = new Set(analisarTrans(rows).filter(a => a.alerta).map(a => a.t));
-    const gestorDe = t => dono(t.placa).gestor || "Sem gestor (placa fora da base)";
+    const gestorDe = t => donoTrans(t).gestor || "Sem gestor (placa e motorista fora da base)";
     const g = {};
     const soma = (l, campo) => { l.forEach(t => { const k = gestorDe(t); g[k] = g[k] || { ab: 0, l: 0, v: 0, va: 0, al: 0 }; if (campo === "v") { g[k].ab++; g[k].l += n0(numBR(t.litros)); g[k].v += n0(numBR(t.valor)); if (alertaSet.has(t)) g[k].al++; } else g[k].va += n0(numBR(t.valor)); }); };
     soma(atual, "v"); soma(anterior, "va");
@@ -1579,7 +1600,7 @@
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt ? (dv < 0 ? "-" : "") + "R$ " + fmtN(Math.abs(dv), 2) : "-"}</td>
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt && dp != null ? fmtN(dp, 1) + "%" : "-"}</td><td class="num">${x.al || "-"}</td></tr>`; }).join("") || '<tr><td colspan="10" class="info">Sem transações.</td></tr>';
     // NOVO (24/11/2026): "Sem gestor" aberto por INFORMACAO ADICIONAL 1 (placas que não estão na base de veículos)
-    const semG = atual.filter(t => !dono(t.placa).gestor);
+    const semG = atual.filter(t => !donoTrans(t).gestor);
     const box = $("#rk-semg");
     if (box) {
       if (!semG.length) box.innerHTML = "";
@@ -1588,7 +1609,7 @@
         const gi = {};
         semG.forEach(t => { const k = String(t.info1 || "").trim() || "(sem informação adicional 1)"; const o = gi[k] = gi[k] || { pl: new Set(), ab: 0, v: 0 }; o.pl.add(t.placa); o.ab++; o.v += n0(numBR(t.valor)); });
         const ks = Object.keys(gi).sort((x, y) => gi[y].v - gi[x].v), tv = semG.reduce((s, t) => s + n0(numBR(t.valor)), 0);
-        box.innerHTML = `<h3 style="margin:18px 0 4px">Sem gestor — por Informação adicional 1 <small class="info">${semG.length} abastecimentos de ${new Set(semG.map(t => t.placa)).size} placas que não estão na base de veículos · passe o mouse em "placas" para ver quais são</small></h3>` +
+        box.innerHTML = `<h3 style="margin:18px 0 4px">Sem gestor — por Informação adicional 1 <small class="info">${semG.length} abastecimentos de ${new Set(semG.map(t => t.placa)).size} placas fora da base de veículos e com motorista que não é condutor de nenhum carro nem está na hierarquia · passe o mouse em "placas" para ver quais são</small></h3>` +
           (temInfo ? "" : `<p class="nota">As transações gravadas ainda não têm a coluna INFORMACAO ADICIONAL 1. Suba de novo a base de transações deste mês (botão "Subir transações"): ela preenche essa coluna sem duplicar nada.</p>`) +
           `<div style="overflow:auto"><table class="tab-rank"><thead><tr><th>Informação adicional 1</th><th class="num">Placas</th><th class="num">Abast.</th><th class="num">Valor</th><th class="num">% do sem gestor</th></tr></thead><tbody>` +
           ks.map(k => { const o = gi[k], pls = Array.from(o.pl).sort();
