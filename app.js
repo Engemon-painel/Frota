@@ -1548,12 +1548,14 @@
     // NOVO (25/11/2026): filtro MODELO VEICULO (ex.: CARTAO CORINGA, CARTAO OPERAÇÃO, STRADA…) — coringa primeiro
     const modF = t => String(t.modelo || "").replace(/\s+/g, " ").trim().toUpperCase();
     const ehCartaoX = m => /^CART(AO|ÃO)/.test(m);
-    const opsM = Array.from(new Set(doMes.map(modF).filter(Boolean))).sort((x, y) => (ehCartaoX(y) - ehCartaoX(x)) || (/CORINGA/.test(y) - /CORINGA/.test(x)) || x.localeCompare(y));
+    // tipos de cartão: CARTAO CORINGA, CARTAO OPERAÇÃO… e o resto (carros com placa) = "Cartão comum"
+    const tipoCartao = t => { const m = modF(t); return ehCartaoX(m) ? m : "__comum__"; };
+    const opsM = Array.from(new Set(doMes.map(modF).filter(ehCartaoX))).sort((x, y) => (/CORINGA/.test(y) - /CORINGA/.test(x)) || x.localeCompare(y));
     const selM = $("#rk-modelo"), vM = selM.value;
-    selM.innerHTML = '<option value="">Modelo veículo: todos</option>' + opsM.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (doMes.some(t => !modF(t)) ? '<option value="__vazio__">Vazio</option>' : "");
+    selM.innerHTML = '<option value="">Tipo de cartão: todos</option>' + opsM.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (doMes.some(t => tipoCartao(t) === "__comum__") ? '<option value="__comum__">Cartão comum</option>' : "");
     selM.value = Array.from(selM.options).some(o => o.value === vM) ? vM : "";
     frk.modelo = selM.value;
-    const bateM = t => !frk.modelo || ehPedagio(t) || (frk.modelo === "__vazio__" ? !modF(t) : modF(t) === frk.modelo);
+    const bateM = t => !frk.modelo || ehPedagio(t) || tipoCartao(t) === frk.modelo;
     const rows = todasRows.filter(t => bateF(t) && bateM(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
     let r = rankingTecnicos(rows, !!(frk.frota || frk.modelo));
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
