@@ -1325,7 +1325,21 @@
   // ---------- regras de alerta das transações (iguais à planilha de análise)
   //  km inválido · consumo < 5 km/l (FROTA/RAC) · 2+ abastecimentos da placa no dia · > 80 L ·
   //  preço/litro > 15% acima da mediana do mesmo combustível no mesmo estado · aditivado. GMG fora de km, dia e litros.
-  const ehGMG = t => /gerador|\bgmg\b/.test(sem([t.modelo, t.familia, t.placa, t.servico, t.tipo_frota].join(" ")));
+  // NUMERO FROTA: o da transação; se não veio, o do cartão (Extrato Simplificado) pelo nº do cartão ou pela placa
+  let NRF_MAPA = null, NRF_BASE = null;
+  function nrFrotaDe(t) {
+    const prop = String(t.nr_frota || "").trim();
+    if (prop) return prop.toUpperCase();
+    if (NRF_BASE !== TODOS.cart) {
+      NRF_BASE = TODOS.cart; NRF_MAPA = new Map();
+      (TODOS.cart || []).forEach(c => { const n = String(c.nr_frota || "").trim().toUpperCase(); if (!n) return;
+        const ct = String(c.cartao || "").replace(/\D/g, ""); if (ct) NRF_MAPA.set("c" + ct, n);
+        const pl = String(c.placa || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); if (pl && !NRF_MAPA.has("p" + pl)) NRF_MAPA.set("p" + pl, n); });
+    }
+    const ct = String(t.cartao || "").replace(/\D/g, "");
+    return (ct && NRF_MAPA.get("c" + ct)) || NRF_MAPA.get("p" + String(t.placa || "").toUpperCase()) || "";
+  }
+  const ehGMG = t => /gerador|\bgmg\b/.test(sem([t.modelo, t.familia, t.placa, t.servico, t.tipo_frota, nrFrotaDe(t)].join(" ")));
   const precoLitro = t => { const p = n0(numBR(t.vl_litro)); if (p > 0) return p; const l = n0(numBR(t.litros)); return l > 0 ? n0(numBR(t.valor)) / l : 0; };
   const mediana = l => { const a = l.filter(x => x > 0).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
   function analisarTrans(rows) {
@@ -1496,16 +1510,20 @@
     // lista todos os combustíveis que existem na base do mês (mesmo os que só aparecem em outro contrato, equipe ou gerador)
     frk.comb = opSel("#rk-comb", Array.from(new Set((TRANS_C[frk.mes] || []).filter(t => !ehPedagio(t)).map(t => String(t.combustivel || "").trim().toUpperCase()).filter(Boolean))).sort(), "Todos os combustíveis");
     // NOVO (24/11/2026): filtro pela coluna NUMERO FROTA da Ticket Log (ex.: GMG); vazio aparece como "Vazio"
-    const nrF = t => String(t.nr_frota || "").trim().toUpperCase();
+    const nrF = t => nrFrotaDe(t);
     const doMes = (TRANS_C[frk.mes] || []).filter(t => !ehPedagio(t));
     const temNr = doMes.some(t => nrF(t));
     const opsF = Array.from(new Set(doMes.map(nrF).filter(Boolean))).sort();
     const selF = $("#rk-frota"), vF = selF.value;
-    selF.innerHTML = '<option value="">Número frota: todos</option>' + opsF.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (temNr && doMes.some(t => !nrF(t)) ? '<option value="__vazio__">Vazio</option>' : "");
+    // enquanto a coluna NUMERO FROTA não foi gravada, separa o GMG pelo modelo/família/serviço (como nos alertas)
+    const temGmg = doMes.some(ehGMG);
+    selF.innerHTML = '<option value="">Número frota: todos</option>' + (temNr
+      ? opsF.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (doMes.some(t => !nrF(t)) ? '<option value="__vazio__">Vazio</option>' : "")
+      : (temGmg ? '<option value="__gmg__">GMG (gerador)</option><option value="__naogmg__">Sem GMG</option>' : ""));
     selF.value = Array.from(selF.options).some(o => o.value === vF) ? vF : "";
     selF.title = temNr ? "" : "As transações gravadas ainda não têm a coluna NUMERO FROTA: suba de novo a base de transações do mês.";
     frk.frota = selF.value;
-    const bateF = t => !frk.frota || ehPedagio(t) || (frk.frota === "__vazio__" ? !nrF(t) : nrF(t) === frk.frota);
+    const bateF = t => !frk.frota || ehPedagio(t) || (frk.frota === "__vazio__" ? !nrF(t) : frk.frota === "__gmg__" ? ehGMG(t) : frk.frota === "__naogmg__" ? !ehGMG(t) : nrF(t) === frk.frota);
     const rows = todasRows.filter(t => bateF(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
     let r = rankingTecnicos(rows, !!frk.frota);
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
@@ -1681,7 +1699,7 @@
       vl_litro: col("vl/litro"), valor: col("valor emissao"), hodometro: col("hodometro ou horimetro"), km_rodados: col("km rodados ou horas trabalhadas"),
       km_litro: col("km/litro ou litros/hora"), estabelecimento: col("nome estabelecimento"), cidade: col("cidade"), uf: col("uf"),
       servico: col("servico"), tipo_frota: col("tipo frota"), familia: col("familia veiculo"),
-      nr_frota: cab.findIndex(h => h === "numero frota" || h === "numero da frota" || h === "nr frota"),
+      nr_frota: cab.findIndex(h => /^(numero|nr|n|no|num)\.? ?(da |de )?frota/.test(h)),
       // INFORMACAO ADICIONAL 1 (contrato/centro de custo do cartão na Ticket Log) — aceita "adidional" (como vem no arquivo)
       info1: (() => { const l = cab.map((h, i) => [h, i]).filter(([h]) => /^informac?ao adi/.test(h)); const um = l.find(([h]) => /1$/.test(h)); return um ? um[1] : (l[0] ? l[0][1] : -1); })() };
     if (ix.data < 0 || ix.placa < 0 || ix.litros < 0) return msg(el, "Base de transações sem as colunas DATA TRANSACAO, PLACA ou LITROS.", "erro");
