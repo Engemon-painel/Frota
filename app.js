@@ -1545,8 +1545,17 @@
     selF.title = temNr ? "" : "As transações gravadas ainda não têm a coluna NUMERO FROTA: suba de novo a base de transações do mês.";
     frk.frota = selF.value;
     const bateF = t => !frk.frota || ehPedagio(t) || (frk.frota === "__vazio__" ? !nrF(t) : frk.frota === "__gmg__" ? ehGMG(t) : frk.frota === "__naogmg__" ? !ehGMG(t) : nrF(t) === frk.frota);
-    const rows = todasRows.filter(t => bateF(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
-    let r = rankingTecnicos(rows, !!frk.frota);
+    // NOVO (25/11/2026): filtro MODELO VEICULO (ex.: CARTAO CORINGA, CARTAO OPERAÇÃO, STRADA…) — coringa primeiro
+    const modF = t => String(t.modelo || "").replace(/\s+/g, " ").trim().toUpperCase();
+    const ehCartaoX = m => /^CART(AO|ÃO)/.test(m);
+    const opsM = Array.from(new Set(doMes.map(modF).filter(Boolean))).sort((x, y) => (ehCartaoX(y) - ehCartaoX(x)) || (/CORINGA/.test(y) - /CORINGA/.test(x)) || x.localeCompare(y));
+    const selM = $("#rk-modelo"), vM = selM.value;
+    selM.innerHTML = '<option value="">Modelo veículo: todos</option>' + opsM.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + (doMes.some(t => !modF(t)) ? '<option value="__vazio__">Vazio</option>' : "");
+    selM.value = Array.from(selM.options).some(o => o.value === vM) ? vM : "";
+    frk.modelo = selM.value;
+    const bateM = t => !frk.modelo || ehPedagio(t) || (frk.modelo === "__vazio__" ? !modF(t) : modF(t) === frk.modelo);
+    const rows = todasRows.filter(t => bateF(t) && bateM(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
+    let r = rankingTecnicos(rows, !!(frk.frota || frk.modelo));
     if (frk.busca) r = r.filter(x => sem([x.nome, x.contrato, x.gestor].join(" ")).includes(frk.busca));
     const val = (x, k) => x[k] == null ? -Infinity : x[k];
     r.sort((a, b) => typeof a[frk.ord] === "string" ? sem(b[frk.ord]).localeCompare(sem(a[frk.ord])) : val(b, frk.ord) - val(a, frk.ord));
@@ -1554,7 +1563,7 @@
     const rs = r.map(x => x.rskm).filter(x => x != null).sort((a, b) => a - b), med = rs.length ? rs[Math.floor(rs.length / 2)] : 0;
     const corRsKm = v => v == null ? "" : v <= med * 0.85 ? "#bbf7d0" : v <= med * 1.15 ? "#fef08a" : v <= med * 1.4 ? "#fdba74" : "#fca5a5";
     const ped = r.some(x => x.ped);
-    $("#cb-rank-info").textContent = `${r.length} técnicos · R$/km mediano ${fmtN(med, 2)}`;
+    $("#cb-rank-info").textContent = `${r.length} técnicos · R$ ${fmtN(r.reduce((s, x) => s + x.gasto, 0), 2)} · R$/km mediano ${fmtN(med, 2)}`;
     const th = (k, t) => `<th class="num${frk.ord === k ? " ord" : ""}" data-k="${k}">${t}</th>`;
     $("#cb-rank-cab").innerHTML = `<tr><th class="num">#</th><th>Técnico</th><th>Contrato principal</th><th>Gestor</th><th>Classif.</th><th>Combustível</th>${th("abast", "Abast.")}${th("litros", "Litros")}${th("gasto", "Valor gasto")}
       ${th("kmV", "Km rodado (válido)")}${th("kml", "Km/L")}${th("gastoV", "Valor c/ km válido")}${th("rskm", "R$ por km")}${th("inval", "Abast. c/ km inválido")}${th("pctInval", "% abast. c/ km inválido")}${ped ? th("ped", "Pedágio") : ""}</tr>`;
@@ -1631,6 +1640,7 @@
   $("#rk-contrato").addEventListener("change", () => desenharRanking());
   $("#rk-comb").addEventListener("change", () => desenharRanking());
   $("#rk-frota").addEventListener("change", () => desenharRanking());
+  $("#rk-modelo").addEventListener("change", () => desenharRanking());
   $("#rk-busca").addEventListener("input", e => { frk.busca = sem(e.target.value); desenharRanking(); });
   let RANK_ATUAL = null;
   // ---------- aba Alertas de combustível (por condutor)
