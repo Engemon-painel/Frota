@@ -1243,26 +1243,33 @@
   // (condutor de algum carro da base; se não, a hierarquia: colaborador → gerente)
   let MOT_MAPA = null, MOT_N = -1, MOT_H = null;
   const chavesMot = s => { const p = sem(s).replace(/[^a-z ]/g, " ").split(/\s+/).filter(x => x && ["de", "da", "do", "das", "dos", "e"].indexOf(x) < 0); return p.length ? [p.join(" "), p.length > 1 ? p[0] + " " + p[p.length - 1] : ""].filter(Boolean) : []; };
-  // pessoas da base de veículos: condutor atual de cada carro e, depois, quem já foi condutor (histórico de trocas)
-  let PESSOAS = null, PES_V = null, PES_H = null;
+  // pessoas da base de veículos: condutor atual de cada carro, quem já foi condutor (histórico) e, por último, a hierarquia
+  // ALTERADO (25/11/2026 v74): nome que aparece com mais de um gestor → fica o gestor do carro atual / o mais frequente (não deixa mais "sem gestor")
+  let PESSOAS = null, PES_V = null, PES_H = null, PES_R = null, MAT_HIER = null;
   const CACHE_MOT = new Map();
+  const soDig = s => String(s == null ? "" : s).replace(/\D/g, "").replace(/^0+/, "");
   function pessoasBase() {
-    if (PESSOAS && PES_V === TODOS.veic && PES_H === TODOS.hist) return PESSOAS;
-    PES_V = TODOS.veic; PES_H = TODOS.hist; PESSOAS = []; CACHE_MOT.clear();
+    if (PESSOAS && PES_V === TODOS.veic && PES_H === TODOS.hist && PES_R === TODOS.hier) return PESSOAS;
+    PES_V = TODOS.veic; PES_H = TODOS.hist; PES_R = TODOS.hier; PESSOAS = []; CACHE_MOT.clear(); MAT_HIER = new Map();
     const porPlaca = new Map((TODOS.veic || []).map(v => [v.placa, v]));
-    const add = (nome, v, prio) => { if (!nome || !v || !v.gestor_operacao || /coringa|oficina/i.test(nome)) return; const ks = chavesMot(nome); if (!ks[0]) return;
-      PESSOAS.push({ k: ks[0], k2: ks[1] || "", toks: ks[0].split(" "), gestor: v.gestor_operacao, contrato: v.operacao || "", prio }); };
-    (TODOS.veic || []).forEach(v => add(v.condutor, v, 1));
-    (TODOS.hist || []).forEach(h => add(h.condutor, porPlaca.get(h.placa), 2));
+    const add = (nome, gestor, contrato, prio) => { if (!nome || !gestor || /coringa|oficina/i.test(nome)) return; const ks = chavesMot(nome); if (!ks[0]) return;
+      PESSOAS.push({ nome: String(nome).trim().toUpperCase(), k: ks[0], k2: ks[1] || "", toks: ks[0].split(" "), gestor: String(gestor).trim(), contrato: contrato || "", prio }); };
+    (TODOS.veic || []).forEach(v => add(v.condutor, v.gestor_operacao, v.operacao, 1));
+    (TODOS.hist || []).forEach(h => { const v = porPlaca.get(h.placa); if (v) add(h.condutor, v.gestor_operacao, v.operacao, 2); });
+    (TODOS.hier || []).forEach(h => { add(h.colaborador, h.gerente, "", 3); const m = soDig(h.matricula); if (m) MAT_HIER.set(m, h); });
     return PESSOAS;
   }
-  // devolve o gestor só se todos os candidatos (da melhor prioridade) forem do mesmo gestor
+  // escolhe o gestor: melhor prioridade; se a pessoa aparece com mais de um gestor, fica o mais frequente (empate: o primeiro = carro atual / troca mais recente)
   function unico(cands) {
     if (!cands.length) return null;
     const p = Math.min(...cands.map(c => c.prio)), l = cands.filter(c => c.prio === p);
-    const gs = Array.from(new Set(l.map(c => c.gestor)));
-    return gs.length === 1 ? { gestor: l[0].gestor, contrato: l[0].contrato, via: "motorista" } : null;
+    const cont = new Map(); l.forEach(c => cont.set(c.gestor, (cont.get(c.gestor) || 0) + 1));
+    let best = l[0]; l.forEach(c => { if (cont.get(c.gestor) > cont.get(best.gestor)) best = c; });
+    const ct = l.find(c => c.gestor === best.gestor && c.contrato) || best;
+    return { gestor: best.gestor, contrato: ct.contrato, via: "motorista", base: best.nome };
   }
+  // só aceita se os candidatos forem UMA pessoa só (usado nas buscas mais soltas)
+  const umaPessoa = cands => new Set(cands.map(c => c.k)).size === 1 ? unico(cands) : null;
   function donoPorMotorista(nome) {
     if (!nome) return null;
     const ps = pessoasBase();
@@ -1270,20 +1277,33 @@
     if (CACHE_MOT.has(ck)) return CACHE_MOT.get(ck);
     const ks = chavesMot(nome); let r = null;
     if (ks[0]) {
-      const toks = ks[0].split(" ");
+      const toks = ks[0].split(" "), sob = toks.slice(1).filter(t => t.length >= 3);
+      const bate = (t, x) => x === t || (t.length >= 4 && x.indexOf(t) === 0) || (x.length >= 4 && t.indexOf(x) === 0);
+      const comuns = p => sob.filter(t => p.toks.slice(1).some(x => bate(t, x))).length;
       r = unico(ps.filter(p => p.k === ks[0]))                                                     // 1) nome igual
         || (ks[1] ? unico(ps.filter(p => p.k2 === ks[1])) : null)                                  // 2) primeiro + último nome
         || (ks[0].length >= 12 ? unico(ps.filter(p => p.k.length >= 12 && (p.k.indexOf(ks[0]) === 0 || ks[0].indexOf(p.k) === 0))) : null)   // 3) nome cortado
-        || (toks.length >= 2 ? unico(ps.filter(p => p.toks[0] === toks[0] &&                         // 4) mesmo primeiro nome + 2 sobrenomes em comum
-             toks.slice(1).filter(t => t.length >= 3 && p.toks.slice(1).some(x => x === t || (t.length >= 4 && x.indexOf(t) === 0) || (x.length >= 4 && t.indexOf(x) === 0))).length >= Math.min(2, toks.length - 1, p.toks.length - 1))) : null);
+        || (sob.length ? unico(ps.filter(p => bate(toks[0], p.toks[0]) &&                           // 4) mesmo primeiro nome + sobrenomes em comum
+             comuns(p) >= Math.min(2, sob.length, p.toks.slice(1).filter(t => t.length >= 3).length))) : null)
+        || (sob.length ? umaPessoa(ps.filter(p => bate(toks[0], p.toks[0]) && comuns(p) >= 1)) : null)   // 5) primeiro nome + 1 sobrenome, se for uma pessoa só
+        || (toks.length === 1 || sob.length === 0 ? umaPessoa(ps.filter(p => p.toks[0] === toks[0])) : null);   // 6) só o primeiro nome, se for único na base
     }
     CACHE_MOT.set(ck, r);
     return r;
   }
-  // ALTERADO (25/11/2026): o gestor do abastecimento vem SÓ pelo NOME DO MOTORISTA (condutor de um carro da base),
-  // não pela placa — cartão coringa (ex.: COR0291) não está na base e o técnico, sim.
+  // nomes da base parecidos (mesmo primeiro nome) — usado só para mostrar no quadro "Sem gestor"
+  function parecidos(nome) {
+    const ks = chavesMot(nome); if (!ks[0]) return [];
+    const t0 = ks[0].split(" ")[0];
+    return Array.from(new Set(pessoasBase().filter(p => p.toks[0] === t0).map(p => p.nome))).slice(0, 3);
+  }
+  // ALTERADO (25/11/2026): o gestor do abastecimento vem pelo NOME DO MOTORISTA (condutor de um carro da base / histórico / hierarquia),
+  // depois pela MATRÍCULA (hierarquia). Sem nome de motorista → usa a placa (se o carro estiver na base).
   function donoTrans(t) {
-    const m = donoPorMotorista(t.motorista);
+    let m = donoPorMotorista(t.motorista);
+    if (!m && t.matricula) { pessoasBase(); const h = MAT_HIER && MAT_HIER.get(soDig(t.matricula));
+      if (h) m = donoPorMotorista(h.colaborador) || (h.gerente ? { gestor: h.gerente, contrato: "", via: "motorista" } : null); }
+    if (!m && !String(t.motorista || "").trim()) { const d = dono(t.placa); if (d.v && d.gestor) m = { gestor: d.gestor, contrato: d.contrato, via: "motorista" }; }
     return m && m.via === "motorista" ? { v: null, condutor: "", gestor: m.gestor, contrato: m.contrato, via: m.via } : { v: null, condutor: "", gestor: "", contrato: "", via: "" };
   }
   const bateDono = (placa, x, g, ct) => { if (!g && !ct) return true; const d = dono(placa, x); return (!g || d.gestor === g) && (!ct || d.contrato === ct); };
@@ -1650,9 +1670,10 @@
         const ks = Object.keys(gi).sort((x, y) => gi[y].v - gi[x].v), tv = semG.reduce((s, t) => s + n0(numBR(t.valor)), 0);
         box.innerHTML = `<h2 class="sub-titulo">Sem gestor — por Informação adicional 1 <span class="info" style="font-size:12.5px;font-weight:500">${semG.length} abastecimentos · ${new Set(semG.map(t => t.placa)).size} placas · motorista não é condutor de nenhum carro da base · passe o mouse em "Placas" para ver quais são</span></h2>` +
           (temInfo ? "" : `<p class="nota">As transações gravadas ainda não têm a coluna INFORMACAO ADICIONAL 1. Suba de novo a base de transações deste mês (botão "Subir transações"): ela preenche essa coluna sem duplicar nada.</p>`) +
-          `<div class="tabela-caixa cc-caixa"><table class="tabela tab-rank"><thead><tr><th>Informação adicional 1</th><th class="num">Placas</th><th>Motoristas que não estão como condutor na base</th><th class="num">Abast.</th><th class="num">Valor</th><th class="num">% do sem gestor</th></tr></thead><tbody>` +
+          `<div class="tabela-caixa cc-caixa"><table class="tabela tab-rank"><thead><tr><th>Informação adicional 1</th><th class="num">Placas</th><th>Motorista (Ticket Log) → nomes parecidos na base</th><th class="num">Abast.</th><th class="num">Valor</th><th class="num">% do sem gestor</th></tr></thead><tbody>` +
           ks.map(k => { const o = gi[k], pls = Array.from(o.pl).sort();
-            return `<tr><td><b>${esc(k)}</b></td><td class="num" title="${esc(pls.join(", "))}" style="cursor:help;text-decoration:underline dotted">${pls.length}</td><td style="font-size:12px;max-width:520px">${esc(Array.from(o.mo).sort().join(", "))}</td><td class="num">${o.ab}</td><td class="num">R$ ${fmtN(o.v, 2)}</td><td class="num">${tv ? fmtN(o.v / tv * 100, 1) + "%" : "-"}</td></tr>`; }).join("") +
+            return `<tr><td><b>${esc(k)}</b></td><td class="num" title="${esc(pls.join(", "))}" style="cursor:help;text-decoration:underline dotted">${pls.length}</td><td style="font-size:12px;max-width:560px">${Array.from(o.mo).sort().map(nm => { const pq = nm === "(SEM NOME)" ? [] : parecidos(nm);
+              return `<div><b>${esc(nm)}</b> <span class="info">${pq.length ? "→ na base: " + esc(pq.join(" · ")) : "→ ninguém com esse primeiro nome na base"}</span></div>`; }).join("")}</td><td class="num">${o.ab}</td><td class="num">R$ ${fmtN(o.v, 2)}</td><td class="num">${tv ? fmtN(o.v / tv * 100, 1) + "%" : "-"}</td></tr>`; }).join("") +
           `</tbody></table></div>`;
       }
     }
@@ -2023,7 +2044,7 @@
   }
   $("#bt-hi-novo").addEventListener("click", () => editarHier(null));
   $("#tb-hier").addEventListener("click", e => { const b = e.target.closest("[data-hi-ed]"); if (b) editarHier(HIER.find(h => h.colaborador === b.dataset.hiEd)); });
-  // De-Para: colunas Colaborador/Nome, Supervisor, Coordenador, Gerente (Matrícula opcional), cabeçalho em qualquer linha
+  // De-Para: colunas Colaborador/Nome/Motorista, Supervisor, Coordenador, Gerente ou Gestor (Matrícula opcional), cabeçalho em qualquer linha
   $("#arq-hier").addEventListener("change", async e => {
     const arq = e.target.files[0]; e.target.value = "";
     if (!arq) return;
@@ -2032,7 +2053,7 @@
       msg(el, "Lendo " + arq.name + "…");
       const wb = XLSX.read(await arq.arrayBuffer(), { type: "array" });
       const regs = [];
-      const nomeCol = h => ["colaborador", "nome", "funcionario", "tecnico", "nome do colaborador", "nome colaborador", "condutor", "colaboradores"].includes(h);
+      const nomeCol = h => ["colaborador", "nome", "funcionario", "tecnico", "nome do colaborador", "nome colaborador", "condutor", "colaboradores", "motorista", "nome motorista", "nome do motorista"].includes(h);
       wb.SheetNames.forEach(nome => {
         const m = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: false });
         const r0 = m.slice(0, 30).findIndex(l => l.some(c => nomeCol(sem(c))) && l.some(c => /^(supervisor|coordenador|gerente|gestor)/.test(sem(c))));
@@ -2044,10 +2065,22 @@
           const t = k => ix[k] >= 0 ? String(l[ix[k]] == null ? "" : l[ix[k]]).replace(/\s+/g, " ").trim() : "";
           if (!t("colaborador")) return;
           const reg = { colaborador: t("colaborador") };
-          ["matricula", "supervisor", "coordenador", "gerente"].forEach(k => { if (ix[k] >= 0) reg[k] = t(k); });
+          // ALTERADO (26/11/2026): célula vazia não apaga o que já está gravado (ex.: D-Para da frota sem gestor em algumas linhas)
+          ["matricula", "supervisor", "coordenador", "gerente"].forEach(k => { if (ix[k] >= 0 && t(k)) reg[k] = t(k); });
           regs.push(reg);
         });
       });
+      // ALTERADO (26/11/2026): mesmo colaborador em várias linhas (ex.: D-Para da frota, 1 linha por placa) → 1 registro só,
+      // com o gestor/supervisor/coordenador que mais aparece para ele
+      (() => {
+        const grupos = new Map();
+        regs.forEach(r => { const k = sem(r.colaborador); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(r); });
+        const maisComum = (l, k) => { const c = {}; l.forEach(r => { if (r[k]) c[r[k]] = (c[r[k]] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a])[0]; };
+        regs.length = 0;
+        grupos.forEach(l => { const r = { colaborador: l[0].colaborador };
+          ["matricula", "supervisor", "coordenador", "gerente"].forEach(k => { const v = maisComum(l, k); if (v) r[k] = v; });
+          regs.push(r); });
+      })();
       if (!regs.length) return msg(el, "Não achei as colunas Colaborador (ou Nome) e Supervisor/Coordenador/Gerente na planilha.", "erro");
       const gerentes = Array.from(new Set(regs.map(r => r.gerente).filter(Boolean)));
       if (!window.confirm(`${regs.length} colaboradores na planilha${gerentes.length ? " (gerente: " + gerentes.slice(0, 3).join(", ") + (gerentes.length > 3 ? "…" : "") + ")" : ""}. Gravar na hierarquia?`)) return msg(el, "");
