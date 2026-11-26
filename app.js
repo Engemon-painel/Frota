@@ -487,13 +487,18 @@
   const ABA_ACESSO = { inicio: "inicio", rank: "combustivel", alertas: "combustivel", veiculos: "veiculos", historico: "historico", ocorrencias: "ocorrencias", cruzar: "multas", combustivel: "combustivel", hierarquia: "hierarquia" };
   const listaAcessos = u => String((u && u.acessos) || "").split(",").map(x => x.trim()).filter(Boolean);
   const pode = k => !EU || EU.perfil === "admin" || !listaAcessos(EU).length || listaAcessos(EU).indexOf(k) >= 0;
+  // NOVO (26/11/2026): bloqueios por usuário (também para administrador): "usuarios" e "bases"
+  const listaBloq = u => String((u && u.bloqueios) || "").split(",").map(x => x.trim()).filter(Boolean);
+  const bloqueado = k => !!EU && listaBloq(EU).indexOf(k) >= 0;
   function aplicarAcessos() {
     Object.keys(ACESSOS).forEach(k => document.body.classList.toggle("sem-" + k, !pode(k)));
+    document.body.classList.toggle("bloq-usuarios", bloqueado("usuarios"));
+    document.body.classList.toggle("bloq-bases", bloqueado("bases"));
     // grupo do menu sem nenhum item liberado some
     $$("#menu .grupo").forEach(g => { g.hidden = !Array.from(g.querySelectorAll(".sub button")).some(b => getComputedStyle(b).display !== "none" && !b.hidden); });
     const ativa = $$(".aba-conteudo").find(c => !c.hidden);
     const id = ativa ? ativa.id.replace("aba-", "") : "inicio";
-    if (ABA_ACESSO[id] && !pode(ABA_ACESSO[id])) irPara(primeiraAba());
+    if ((ABA_ACESSO[id] && !pode(ABA_ACESSO[id])) || (id === "usuarios" && bloqueado("usuarios"))) irPara(primeiraAba());
   }
   // primeira tela que a pessoa pode abrir (na ordem do menu)
   function primeiraAba() {
@@ -2135,7 +2140,7 @@
       const tot = { gravados: 0, carros: 0 };
       for (let i = 0; i < regs.length; i += 300) {
         msg(el, `Gravando ${i + 1} a ${Math.min(i + 300, regs.length)} de ${regs.length}…`);
-        const r = await api("salvar_hierarquia", { regs: regs.slice(i, i + 300) });
+        const r = await api("salvar_hierarquia", { regs: regs.slice(i, i + 300), lote: true });
         tot.gravados += (r.r && r.r.gravados) || 0; tot.carros += (r.r && r.r.carros) || 0;
       }
       msg(el, `✓ ${tot.gravados} colaboradores gravados · ${tot.carros} carros com supervisor/coordenador atualizados.`, "ok");
@@ -2528,7 +2533,8 @@
       <td><b>${esc(u.nome)}</b></td><td>${esc(u.email)}</td>
       <td>${esc({ admin: "Administrador", gerente: "Gerente", coordenador: "Coordenador", supervisor: "Supervisor" }[u.perfil] || u.perfil)}</td>
       <td>${esc(u.perfil === "admin" ? "Todos" : (u.perfil === "gerente" ? u.gestor_operacao : u.perfil === "coordenador" ? u.coordenador : u.supervisor)) || "—"}</td>
-      <td>${u.perfil === "admin" || !listaAcessos(u).length ? '<span class="tag-ac">Tudo</span>' : listaAcessos(u).map(k => `<span class="tag-ac">${esc(ACESSOS[k] || k)}</span>`).join("")}</td>
+      <td>${u.perfil === "admin" || !listaAcessos(u).length ? '<span class="tag-ac">Tudo</span>' : listaAcessos(u).map(k => `<span class="tag-ac">${esc(ACESSOS[k] || k)}</span>`).join("")}
+        ${listaBloq(u).map(k => `<span class="tag-ac" style="background:#fee2e2;color:#991b1b">🔒 ${k === "usuarios" ? "não cria usuários" : "não sobe bases"}</span>`).join("")}</td>
       <td>${u.ativo ? "Sim" : "Não"}${u.tem_senha ? "" : ' <small style="color:#b45309">(sem senha ainda)</small>'}</td>
       <td><button class="bt bt-sec" data-acao="editar" data-email="${esc(u.email)}">Editar</button> ${String(u.email).toLowerCase() === String(EU.email).toLowerCase() ? "" : `<button class="bt bt-sec" data-acao="ativar" data-email="${esc(u.email)}" data-ativo="${u.ativo}">${u.ativo ? "Desativar" : "Reativar"}</button>
         <button class="bt bt-sec" data-acao="zerar" data-email="${esc(u.email)}" title="A pessoa cria uma senha nova em Primeiro acesso">Zerar senha</button>`}</td></tr>`).join("");
@@ -2540,6 +2546,8 @@
           $("#u-equipe").value = u.perfil === "gerente" ? u.gestor_operacao : u.perfil === "coordenador" ? u.coordenador : u.perfil === "supervisor" ? u.supervisor : "";
           const ac = listaAcessos(u);
           $$("#u-acessos input").forEach(x => { x.checked = !ac.length || ac.indexOf(x.value) >= 0; });
+          const bl = listaBloq(u), euMesmo = String(u.email).toLowerCase() === String(EU.email).toLowerCase();
+          $$("#u-bloq input").forEach(x => { x.checked = bl.indexOf(x.value) >= 0; x.disabled = euMesmo; });
           $("#u-salvar").textContent = "Salvar alterações"; $("#form-user").scrollIntoView({ behavior: "smooth" });
           return;
         }
@@ -2561,11 +2569,12 @@
     const marcados = $$("#u-acessos input").filter(x => x.checked).map(x => x.value);
     const todos = $$("#u-acessos input").length;
     const reg = { email: $("#u-email").value.trim().toLowerCase(), nome: $("#u-nome").value.trim(), perfil, equipe,
-      acessos: perfil === "admin" || marcados.length === todos ? "" : marcados.join(",") };
+      acessos: perfil === "admin" || marcados.length === todos ? "" : marcados.join(","),
+      bloqueios: $$("#u-bloq input").filter(x => x.checked).map(x => x.value).join(",") };
     if (perfil !== "admin" && !marcados.length) return msg($("#u-msg"), "Marque pelo menos uma coisa que a pessoa pode acessar.", "erro");
     try { await api("salvar_usuario", { dados: reg }); }
     catch (err) { return msg($("#u-msg"), err.message, "erro"); }
     msg($("#u-msg"), `✓ ${reg.nome} salvo. Agora ele entra pela tela de login em "Primeiro acesso".`, "ok");
-    e.target.reset(); $$("#u-acessos input").forEach(x => { x.checked = true; }); $("#u-salvar").textContent = "Salvar";
+    e.target.reset(); $$("#u-acessos input").forEach(x => { x.checked = true; }); $$("#u-bloq input").forEach(x => { x.checked = false; x.disabled = false; }); $("#u-salvar").textContent = "Salvar";
   });
 })();
