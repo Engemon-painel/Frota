@@ -58,6 +58,7 @@
 }
 .bt-mini{padding:3px 9px;font-size:12px;margin-left:4px}.st-troca{cursor:pointer;white-space:nowrap}.st-troca:hover{filter:brightness(1.15);box-shadow:0 0 0 2px #cbd5e1}
 </style>
+<style>body.bloq-bases [data-sobe-base]{display:none!important} body.bloq-usuarios [data-aba="usuarios"]{display:none!important}</style>
 </head>
 <body>
   <div id="barra-carregando" aria-hidden="true"></div>
@@ -176,7 +177,7 @@
             <button class="bt bt-sec" id="bt-org" data-so-gerente hidden title="Preenche supervisor e coordenador dos carros pelo Organograma da Claro">👥 Preencher pelo Organograma</button>
             <input id="arq-org" type="file" accept=".xlsx,.xls,.xlsm" hidden>
             <button class="bt bt-sec" id="bt-exportar" data-acesso="exportar">⬇ Exportar Excel</button>
-            <label class="bt bt-sec" for="arq-frota" data-so-admin hidden title="Usar só uma vez, para trazer a base de hoje">⬆ Carga inicial (planilha)</label>
+            <label class="bt bt-sec" for="arq-frota" data-sobe-base data-so-admin hidden title="Usar só uma vez, para trazer a base de hoje">⬆ Carga inicial (planilha)</label>
             <input id="arq-frota" type="file" accept=".xlsx,.xls" hidden>
           </div>
         </div>
@@ -228,7 +229,7 @@
       <!-- MULTAS E BATIDAS: cruzar uma base com o histórico -->
       <div id="aba-cruzar" class="aba-conteudo" hidden>
         <div class="linha-titulo"><h1>Multas</h1>
-          <div class="acoes"><label class="bt bt-pri" for="arq-cruzar">⬆ Subir base (Excel)</label><input id="arq-cruzar" type="file" accept=".xlsx,.xls,.csv" hidden>
+          <div class="acoes"><label class="bt bt-pri" for="arq-cruzar" data-sobe-base>⬆ Subir base (Excel)</label><input id="arq-cruzar" type="file" accept=".xlsx,.xls,.csv" hidden>
           <button class="bt bt-sec" id="bt-cruzar-exp" hidden>⬇ Baixar com o condutor</button>
           <select id="cz-tipo" hidden><option>Multa</option><option>Batida</option><option>Avaria</option><option>Outro</option></select>
           <button class="bt bt-sec" id="bt-cruzar-ocor" hidden>Registrar como ocorrências</button></div></div>
@@ -245,7 +246,7 @@
         <div class="linha-titulo"><h1>Consumo de combustível</h1>
           <div class="acoes">
             <label class="info" data-so-admin hidden>Mês da planilha <input id="cb-mes-up" type="month"></label>
-            <label class="bt bt-pri" for="arq-comb" data-so-admin hidden>⬆ Subir arquivos (consumo, extrato, transações)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
+            <label class="bt bt-pri" for="arq-comb" data-sobe-base data-so-admin hidden>⬆ Subir arquivos (consumo, extrato, transações)</label><input id="arq-comb" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
             <button class="bt bt-sec" id="bt-comb-exp" data-acesso="exportar">⬇ Baixar Excel</button>
           </div></div>
         <p class="nota">Suba o relatório de consumo (escolha o mês), o <b>Extrato Simplificado</b> (saldo dos cartões) ou a base de <b>transações</b> (cada abastecimento com data e motorista); o sistema reconhece sozinho qual é. Cada placa fica ligada ao <b>condutor que estava com o carro no mês</b> (pela linha do tempo). Os carros <b>coringa</b> ficam separados. Subir de novo o mesmo mês substitui os dados dele.</p>
@@ -277,7 +278,7 @@
       <!-- GASTO x KM POR TÉCNICO -->
       <div id="aba-rank" class="aba-conteudo" hidden>
         <div class="linha-titulo"><h1>Gasto x Km rodado por técnico</h1>
-          <div class="acoes"><label class="bt bt-pri" for="arq-trans-rk" data-so-admin hidden title="Transações da Ticket Log de qualquer mês (ex.: o mês anterior, para comparar)">⬆ Subir transações (qualquer mês)</label><input id="arq-trans-rk" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
+          <div class="acoes"><label class="bt bt-pri" for="arq-trans-rk" data-sobe-base data-so-admin hidden title="Transações da Ticket Log de qualquer mês (ex.: o mês anterior, para comparar)">⬆ Subir transações (qualquer mês)</label><input id="arq-trans-rk" type="file" accept=".xlsx,.xls,.csv,.html,.htm" multiple hidden>
           <button class="bt bt-sec" id="bt-rank-exp" data-acesso="exportar">⬇ Baixar Excel</button></div></div>
         <p class="nota">Pelas transações da Ticket Log, sem abastecimento de gerador. Km válido: maior que 0, até 1.500 km e no máximo 25 km/L. Clique no título de uma coluna para ordenar (sempre do maior para o menor).</p>
         <div class="filtros">
@@ -322,7 +323,7 @@
         <div class="linha-titulo"><h1>Hierarquia (equipes)</h1>
           <div class="acoes">
             <button class="bt bt-pri" id="bt-hi-novo" data-so-gerente hidden>+ Adicionar colaborador</button>
-            <label class="bt bt-sec" for="arq-hier" data-so-gerente hidden>⬆ Subir De-Para (Excel)</label><input id="arq-hier" type="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+            <label class="bt bt-sec" for="arq-hier" data-sobe-base data-so-gerente hidden>⬆ Subir De-Para (Excel)</label><input id="arq-hier" type="file" accept=".xlsx,.xls,.xlsm,.csv" hidden>
             <input id="arq-hi-org" type="file" accept=".xlsx,.xls,.xlsm" hidden><button class="bt bt-sec" id="bt-hi-org" data-so-gerente hidden title="Preenche supervisor e coordenador pelo Organograma da Claro (Painel SLA)">👥 Supervisor/coordenador pelo Organograma</button>
             <button class="bt bt-sec" id="bt-hi-exp" data-acesso="exportar">⬇ Baixar Excel</button>
           </div></div>
@@ -390,6 +391,11 @@
             <label><input type="checkbox" value="exportar" checked> Baixar Excel</label>
             <small class="info">Sem o Início, a pessoa entra direto na primeira tela liberada. O administrador acessa tudo.</small>
           </fieldset>
+          <fieldset class="acessos" id="u-bloq"><legend>🔒 Bloquear <small class="info">(vale também para administrador)</small></legend>
+            <label><input type="checkbox" value="usuarios"> Criar e alterar usuários</label>
+            <label><input type="checkbox" value="bases"> Subir bases (transações, consumo, extrato, multas, veículos, De-Para)</label>
+            <small class="info" id="u-bloq-info">Marcado = a pessoa NÃO pode fazer. Você não pode bloquear a si mesma.</small>
+          </fieldset>
           <button class="bt bt-pri" type="submit" id="u-salvar">Salvar</button>
         </form>
         <p id="u-msg" class="msg"></p>
@@ -412,6 +418,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=79"></script>
+  <script src="app.js?v=80"></script>
 </body>
 </html>
