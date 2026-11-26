@@ -1747,6 +1747,29 @@
   $("#rk-modelo").addEventListener("change", () => desenharRanking());
   $("#rk-busca").addEventListener("input", e => { frk.busca = sem(e.target.value); desenharRanking(); });
   let RANK_ATUAL = null;
+  // NOVO (26/11/2026): monta os selects "Tipo de cartão" (MODELO VEICULO) e "Número frota" (NUMERO FROTA / GMG) e devolve o filtro
+  function filtrosCartaoFrota(doMes, selM, selF) {
+    const modF = t => String(t.modelo || "").replace(/\s+/g, " ").trim().toUpperCase();
+    const ehCartaoX = m => /^CART(AO|ÃO)/.test(m);
+    const tipoCartao = t => { const m = modF(t); return ehCartaoX(m) ? m : "__comum__"; };
+    const opsM = Array.from(new Set(doMes.map(modF).filter(ehCartaoX))).sort((x, y) => (/CORINGA/.test(y) - /CORINGA/.test(x)) || x.localeCompare(y));
+    const vM = selM.value;
+    selM.innerHTML = '<option value="">Tipo de cartão: todos</option>' + opsM.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("")
+      + (doMes.some(t => tipoCartao(t) === "__comum__") ? '<option value="__comum__">Cartão comum</option>' : "");
+    selM.value = Array.from(selM.options).some(o => o.value === vM) ? vM : "";
+    const nrF = t => nrFrotaDe(t), temNr = doMes.some(t => nrF(t)), temGmg = doMes.some(ehGMG);
+    const opsF = Array.from(new Set(doMes.map(nrF).filter(Boolean))).sort();
+    const vF = selF.value;
+    selF.innerHTML = '<option value="">Número frota: todos</option>' + (temNr
+      ? opsF.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + '<option value="__outros__">Outros (sem GMG)</option>' + (doMes.some(t => !nrF(t)) ? '<option value="__vazio__">Vazio</option>' : "")
+      : (temGmg ? '<option value="__gmg__">GMG (gerador)</option><option value="__naogmg__">Outros (sem GMG)</option>' : ""));
+    selF.value = Array.from(selF.options).some(o => o.value === vF) ? vF : "";
+    selF.title = temNr ? "NUMERO FROTA da Ticket Log (ex.: GMG)" : "As transações gravadas ainda não têm a coluna NUMERO FROTA: suba de novo a base de transações do mês.";
+    const m = selM.value, f = selF.value;
+    const bateM = t => !m || tipoCartao(t) === m;
+    const bateF = t => !f || (f === "__vazio__" ? !nrF(t) : f === "__gmg__" ? ehGMG(t) : f === "__naogmg__" || f === "__outros__" ? !ehGMG(t) : nrF(t) === f);
+    return { modelo: m, frota: f, bate: t => bateM(t) && bateF(t) };
+  }
   // ---------- aba Alertas de combustível (por condutor)
   const fal = { mes: "", busca: "", ord: "gasto", so: true, aberto: "" };
   let AL_ATUAL = null;
@@ -1759,7 +1782,11 @@
     $("#al-msg").textContent = TRANS_C[fal.mes].length ? "" : "Sem transações nesse mês. Suba a base de transações.";
     const g = opSel("#al-gestor", gestoresDo($("#al-contrato").value), "Todos os gestores");
     const ct = opSel("#al-contrato", contratosDo(g), "Todos os contratos");
-    const an = analisarTrans(transFiltradas(fal.mes, { g, ct }));
+    // NOVO (26/11/2026): filtros Tipo de cartão (coringa / operação / comum) e Número frota (GMG / outros / vazio)
+    // a análise usa o mês inteiro (mediana do preço não muda); o filtro só escolhe quais abastecimentos entram na lista
+    const doMes = (TRANS_C[fal.mes] || []).filter(t => !ehPedagio(t));
+    const fc = filtrosCartaoFrota(doMes, $("#al-modelo"), $("#al-frota"));
+    const an = analisarTrans(transFiltradas(fal.mes, { g, ct })).filter(a => fc.bate(a.t));
     let l = alertasPorCondutor(an);
     const tot = { consumo: 0, kmInv: 0, dia2: 0, l80: 0, preco: 0, aditivado: 0, oficina: 0 };
     l.forEach(x => Object.keys(tot).forEach(k => { tot[k] += x[k]; }));
@@ -1791,6 +1818,8 @@
   $("#al-mes").addEventListener("change", e => { fal.mes = e.target.value; desenharAlertasComb(); });
   $("#al-gestor").addEventListener("change", () => desenharAlertasComb());
   $("#al-contrato").addEventListener("change", () => desenharAlertasComb());
+  $("#al-modelo").addEventListener("change", () => desenharAlertasComb());
+  $("#al-frota").addEventListener("change", () => desenharAlertasComb());
   $("#al-busca").addEventListener("input", e => { fal.busca = sem(e.target.value); desenharAlertasComb(); });
   $("#al-so").addEventListener("change", e => { fal.so = e.target.checked; desenharAlertasComb(); });
   $("#bt-al-exp").addEventListener("click", () => {
