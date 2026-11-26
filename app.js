@@ -2141,6 +2141,84 @@
       msg(el, `✓ ${tot.gravados} colaboradores gravados · ${tot.carros} carros com supervisor/coordenador atualizados.`, "ok");
     } catch (err) { msg(el, "Erro ao subir: " + (err.message || err), "erro"); }
   });
+  // NOVO (26/11/2026): Hierarquia — supervisor e coordenador pelo Organograma da Claro (o mesmo que o Painel SLA publica)
+  // liga pelo nome (igual / nome cortado no Organograma / primeiro + último nome, se for uma pessoa só) e, por último, pela matrícula
+  function casarHierOrg(colabs) {
+    const PART = ["de", "da", "do", "dos", "das", "e"];
+    const toks = n => sem(n).split(" ").filter(x => x && PART.indexOf(x) < 0);
+    const pu = n => { const t = toks(n); return t.length > 1 ? t[0] + " " + t[t.length - 1] : ""; };
+    const limpaMat = m => String(m || "").split("-").pop().replace(/\D/g, "").replace(/^0+/, "");
+    const ord = colabs.filter(c => c.supervisor || c.coordenador).sort((a, b) => (b.ativo === false ? 0 : 1) - (a.ativo === false ? 0 : 1));
+    const porNome = new Map(), porPU = new Map(), porMat = new Map();
+    ord.forEach(c => { const k = sem(c.nome); if (!porNome.has(k)) porNome.set(k, c);
+      const p = pu(c.nome); if (p) { if (!porPU.has(p)) porPU.set(p, []); porPU.get(p).push(c); }
+      const m = limpaMat(c.matricula); if (m && !porMat.has(m)) porMat.set(m, c); });
+    return HIER.map(h => {
+      const k = sem(h.colaborador);
+      let c = porNome.get(k), como = "nome";
+      if (!c) { const l = ord.filter(x => sem(x.nome).length >= 25 && k.indexOf(sem(x.nome)) === 0); if (new Set(l.map(x => sem(x.nome))).size === 1) { c = l[0]; como = "nome cortado"; } }
+      if (!c) {   // primeiro + último nome iguais E todos os nomes do mais curto aparecem no outro (aceita 1 letra trocada: BONFIN × BONFIM)
+        const quase = (a, b) => a === b || (a.length === b.length && a.length >= 5 && [...a].filter((ch, i) => ch !== b[i]).length <= 1);
+        const contem = (a, b) => { const [x, y] = toks(a).length <= toks(b).length ? [toks(a), toks(b)] : [toks(b), toks(a)]; return x.every(t => y.some(u => quase(t, u))); };
+        const l = (porPU.get(pu(h.colaborador)) || []).filter(x => contem(h.colaborador, x.nome));
+        if (new Set(l.map(x => sem(x.nome))).size === 1) { c = l[0]; como = "primeiro + último nome"; }
+      }
+      if (!c && limpaMat(h.matricula)) { c = porMat.get(limpaMat(h.matricula)); como = "matrícula"; }
+      if (!c) return null;
+      return { h, org: c.nome, como, supAtual: h.supervisor || "", coordAtual: h.coordenador || "",
+        supNovo: String(c.supervisor || "").replace(/\s+/g, " ").trim(), coordNovo: String(c.coordenador || "").replace(/\s+/g, " ").trim() };
+    }).filter(Boolean);
+  }
+  function mostrarHierOrg(colabs, fonte) {
+    const casados = casarHierOrg(colabs).filter(x => podeHier(x.h));
+    const muda = (x, sub) => sub ? ((x.supNovo && sem(x.supNovo) !== sem(x.supAtual)) || (x.coordNovo && sem(x.coordNovo) !== sem(x.coordAtual)))
+      : ((!x.supAtual && x.supNovo) || (!x.coordAtual && x.coordNovo));
+    const novoSup = (x, sub) => (sub || !x.supAtual) && x.supNovo ? x.supNovo : x.supAtual;
+    const novoCoord = (x, sub) => (sub || !x.coordAtual) && x.coordNovo ? x.coordNovo : x.coordAtual;
+    const desenha = () => {
+      const sub = $("#ho-sub").checked, l = casados.filter(x => muda(x, sub));
+      $("#ho-res").textContent = `${casados.length} de ${HIER.length} colaboradores encontrados no Organograma · ${l.length} vão mudar`;
+      $("#ho-tb").innerHTML = l.slice(0, 500).map(x => `<tr><td><b>${esc(x.h.colaborador)}</b>${sem(x.org) !== sem(x.h.colaborador) ? `<small class="resp">no Organograma: ${esc(x.org)} · por ${x.como}</small>` : ""}</td>
+        <td>${esc(x.supAtual || "—")} → <b>${esc(novoSup(x, sub) || "—")}</b></td><td>${esc(x.coordAtual || "—")} → <b>${esc(novoCoord(x, sub) || "—")}</b></td></tr>`).join("")
+        || '<tr><td colspan="3" class="info">Nada para mudar.</td></tr>';
+      $("#ho-gravar").disabled = !l.length;
+      return l;
+    };
+    const fora = HIER.filter(h => podeHier(h) && !casados.some(x => x.h === h));
+    abrirModal(`<h2>Supervisor e coordenador pelo Organograma</h2>
+      <p class="nota">Fonte: ${esc(fonte)} (${colabs.length} colaboradores). Cada colaborador da hierarquia é ligado ao Organograma pelo <b>nome</b> (ou pela matrícula) e recebe o supervisor e o coordenador dele. O gerente não muda.</p>
+      <label class="info"><input type="checkbox" id="ho-sub"> também trocar quem já tem supervisor/coordenador diferente do Organograma</label>
+      <p class="info" id="ho-res"></p>
+      <div class="tabela-caixa" style="max-height:45vh"><table class="tabela"><thead><tr><th>Colaborador</th><th>Supervisor</th><th>Coordenador</th></tr></thead><tbody id="ho-tb"></tbody></table></div>
+      ${fora.length ? `<details style="margin-top:8px"><summary class="info">${fora.length} não estão no Organograma (outros contratos, supervisores ou nome diferente)</summary><p class="info" style="font-size:12px">${fora.map(h => esc(h.colaborador)).join(" · ")}</p></details>` : ""}
+      <div class="linha-bt"><button class="bt bt-pri" id="ho-gravar">Gravar</button><span class="msg" id="ho-msg"></span></div>`);
+    desenha();
+    $("#ho-sub").addEventListener("change", desenha);
+    $("#ho-gravar").addEventListener("click", async () => {
+      const sub = $("#ho-sub").checked;
+      const regs = desenha().map(x => ({ colaborador: x.h.colaborador, supervisor: novoSup(x, sub), coordenador: novoCoord(x, sub) }));
+      $("#ho-gravar").disabled = true; msg($("#ho-msg"), "Gravando " + regs.length + " colaboradores…");
+      try {
+        const tot = { gravados: 0, carros: 0 };
+        for (let i = 0; i < regs.length; i += 300) { const r = await api("salvar_hierarquia", { regs: regs.slice(i, i + 300) }); tot.gravados += (r.r && r.r.gravados) || 0; tot.carros += (r.r && r.r.carros) || 0; }
+        msg($("#ho-msg"), `✓ ${tot.gravados} colaboradores atualizados · ${tot.carros} carros com supervisor/coordenador atualizados.`, "ok");
+      } catch (e) { msg($("#ho-msg"), e.message, "erro"); $("#ho-gravar").disabled = false; }
+    });
+  }
+  $("#bt-hi-org").addEventListener("click", async () => {
+    const bt = $("#bt-hi-org"); bt.disabled = true;
+    const colabs = await colaboradoresDoPainel();
+    bt.disabled = false;
+    if (colabs) return mostrarHierOrg(colabs, "Organograma do Painel SLA");
+    if (window.confirm("Não consegui ler o Organograma do Painel SLA. Quer escolher a planilha do Organograma?")) $("#arq-hi-org").click();
+  });
+  $("#arq-hi-org").addEventListener("change", async e => {
+    const arq = e.target.files[0]; e.target.value = "";
+    if (!arq) return;
+    const colabs = colaboradoresDaPlanilha(XLSX.read(await arq.arrayBuffer(), { type: "array" }));
+    if (!colabs.length) return window.alert("Não achei as colunas Nome e Supervisor nessa planilha.");
+    mostrarHierOrg(colabs, arq.name);
+  });
   $("#bt-hi-exp").addEventListener("click", () => {
     const carro = {}; VEICULOS.forEach(v => { if (v.condutor) (carro[sem(v.condutor)] = carro[sem(v.condutor)] || []).push(v.placa); });
     const ws = XLSX.utils.json_to_sheet(HIER.map(h => ({ "Colaborador": h.colaborador, "Matrícula": h.matricula, "Supervisor": h.supervisor, "Coordenador": h.coordenador,
