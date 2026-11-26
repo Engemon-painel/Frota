@@ -1299,7 +1299,32 @@
   }
   // ALTERADO (25/11/2026): o gestor do abastecimento vem pelo NOME DO MOTORISTA (condutor de um carro da base / histórico / hierarquia),
   // depois pela MATRÍCULA (hierarquia). Sem nome de motorista → usa a placa (se o carro estiver na base).
+  // NOVO (26/11/2026): quem não é achado pelo nome/matrícula fica com o gestor da INFORMAÇÃO ADICIONAL 1
+  // (o gestor que mais aparece nos abastecimentos daquela Informação adicional 1 que já têm gestor pelo nome —
+  // ex.: CLARO - CONTRATO INFRA SPC → Paulo Sergio Pedroso)
+  let INFO_G = null, INFO_G_K = "";
+  const chaveInfo = x => sem(x).replace(/\s+/g, " ").trim();
+  function gestorPorInfo1(info) {
+    const k = chaveInfo(info); if (!k) return "";
+    const ver = Object.keys(TRANS_C).map(m => m + ":" + TRANS_C[m].length).join("|") + "#" + pessoasBase().length;
+    if (!INFO_G || INFO_G_K !== ver) {
+      INFO_G_K = ver; const cont = {};
+      Object.keys(TRANS_C).forEach(m => TRANS_C[m].forEach(t => {
+        const ki = chaveInfo(t.info1); if (!ki) return;
+        const d = donoTransNome(t); if (!d.gestor) return;
+        (cont[ki] = cont[ki] || {})[d.gestor] = (cont[ki][d.gestor] || 0) + 1;
+      }));
+      INFO_G = {}; Object.keys(cont).forEach(ki => { const c = cont[ki]; INFO_G[ki] = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; });
+    }
+    return INFO_G[k] || "";
+  }
   function donoTrans(t) {
+    const d = donoTransNome(t);
+    if (d.gestor) return d;
+    const g = gestorPorInfo1(t.info1);
+    return g ? { v: null, condutor: "", gestor: g, contrato: "", via: "info1" } : d;
+  }
+  function donoTransNome(t) {
     let m = donoPorMotorista(t.motorista);
     if (!m && t.matricula) { pessoasBase(); const h = MAT_HIER && MAT_HIER.get(soDig(t.matricula));
       if (h) m = donoPorMotorista(h.colaborador) || (h.gerente ? { gestor: h.gerente, contrato: "", via: "motorista" } : null); }
@@ -1556,7 +1581,8 @@
       const porC = {}; o.ts.forEach(t => { const c = String(t.combustivel || "").trim().toUpperCase() || "NÃO INFORMADO"; porC[c] = (porC[c] || 0) + n0(numBR(t.litros)); });
       const combs = Object.keys(porC).sort((a, b) => porC[b] - porC[a]);
       const combTxt = combs.map(c => combs.length > 1 && litros ? `${c.charAt(0) + c.slice(1).toLowerCase()} ${Math.round(porC[c] / litros * 100)}%` : c.charAt(0) + c.slice(1).toLowerCase()).join(" · ");
-      out.push({ nome: o.nome, combs, combTxt, contrato: (dm => dm && dm.via === "motorista" ? dm.contrato : "")(donoPorMotorista(o.nome)), gestor: (dm => dm && dm.via === "motorista" ? dm.gestor : "")(donoPorMotorista(o.nome)),   // só se o NOME DO MOTORISTA é condutor de um carro da base
+      out.push({ nome: o.nome, combs, combTxt, contrato: (dm => dm && dm.via === "motorista" ? dm.contrato : "")(donoPorMotorista(o.nome)), gestor: (dm => dm && dm.via === "motorista" ? dm.gestor : "")(donoPorMotorista(o.nome))
+          || maisFrequente(o.ts.map(t => donoTrans(t).gestor)),   // pelo nome do motorista; se não achar, pela Informação adicional 1
         info1: maisFrequente(o.ts.map(t => String(t.info1 || "").trim()).filter(Boolean)),
         placas: Array.from(new Set(o.ts.map(t => t.placa))).sort().join(", "),
         classif: maisFrequente(o.ts.map(t => t.tipo_frota).concat(vs.map(v => v.tipo_frota))), abast: o.ts.length, litros, gasto, kmV,
@@ -1660,16 +1686,18 @@
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt && dp != null ? fmtN(dp, 1) + "%" : "-"}</td><td class="num">${x.al || "-"}</td></tr>`; }).join("") || '<tr><td colspan="10" class="info">Sem transações.</td></tr>';
     // NOVO (24/11/2026): "Sem gestor" aberto por INFORMACAO ADICIONAL 1 (placas que não estão na base de veículos)
     const semG = atual.filter(t => !donoTrans(t).gestor);
+    const viaInfo = atual.filter(t => donoTrans(t).via === "info1");
+    const notaInfo = viaInfo.length ? `<p class="nota">${viaInfo.length} abastecimentos (R$ ${fmtN(viaInfo.reduce((s, t) => s + n0(numBR(t.valor)), 0), 2)}) de ${new Set(viaInfo.map(t => String(t.motorista || "").trim().toUpperCase())).size} motoristas que não estão na base ganharam o gestor pela <b>Informação adicional 1</b> (o gestor que mais aparece naquela Informação adicional 1).</p>` : "";
     const box = $("#rk-semg");
     if (box) {
-      if (!semG.length) box.innerHTML = "";
+      if (!semG.length) box.innerHTML = notaInfo;
       else {
         const temInfo = semG.some(t => String(t.info1 || "").trim());
         const gi = {};
         semG.forEach(t => { const k = String(t.info1 || "").trim() || "(sem informação adicional 1)"; const o = gi[k] = gi[k] || { pl: new Set(), mo: new Set(), ab: 0, v: 0 }; o.pl.add(t.placa); o.mo.add(String(t.motorista || "(sem nome)").trim().toUpperCase()); o.ab++; o.v += n0(numBR(t.valor)); });
         const ks = Object.keys(gi).sort((x, y) => gi[y].v - gi[x].v), tv = semG.reduce((s, t) => s + n0(numBR(t.valor)), 0);
         box.innerHTML = `<h2 class="sub-titulo">Sem gestor — por Informação adicional 1 <span class="info" style="font-size:12.5px;font-weight:500">${semG.length} abastecimentos · ${new Set(semG.map(t => t.placa)).size} placas · motorista não é condutor de nenhum carro da base · passe o mouse em "Placas" para ver quais são</span></h2>` +
-          (temInfo ? "" : `<p class="nota">As transações gravadas ainda não têm a coluna INFORMACAO ADICIONAL 1. Suba de novo a base de transações deste mês (botão "Subir transações"): ela preenche essa coluna sem duplicar nada.</p>`) +
+          notaInfo + (temInfo ? "" : `<p class="nota">As transações gravadas ainda não têm a coluna INFORMACAO ADICIONAL 1. Suba de novo a base de transações deste mês (botão "Subir transações"): ela preenche essa coluna sem duplicar nada.</p>`) +
           `<div class="tabela-caixa cc-caixa"><table class="tabela tab-rank"><thead><tr><th>Informação adicional 1</th><th class="num">Placas</th><th>Motorista (Ticket Log) → nomes parecidos na base</th><th class="num">Abast.</th><th class="num">Valor</th><th class="num">% do sem gestor</th></tr></thead><tbody>` +
           ks.map(k => { const o = gi[k], pls = Array.from(o.pl).sort();
             return `<tr><td><b>${esc(k)}</b></td><td class="num" title="${esc(pls.join(", "))}" style="cursor:help;text-decoration:underline dotted">${pls.length}</td><td style="font-size:12px;max-width:560px">${Array.from(o.mo).sort().map(nm => { const pq = nm === "(SEM NOME)" ? [] : parecidos(nm);
