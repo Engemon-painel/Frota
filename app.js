@@ -1073,17 +1073,37 @@
 
   // junta as linhas de cada placa (gasolina + etanol) e marca alerta de consumo
   // de onde vêm os números do mês: as TRANSAÇÕES (mês inteiro, igual ao portal) quando já subiu; senão o relatório de consumo
+  // ALTERADO (26/11/2026): centro de custo "ND" (não definido) ou vazio no cadastro do cartão → usa a INFORMAÇÃO ADICIONAL 1
+  // da própria transação (contrato do cartão na Ticket Log, ex.: CLARO - CONTRATO INFRA SPC)
+  const ccVazio = c => { const x = sem(c).replace(/[^a-z]/g, ""); return !x || x === "nd" || x === "na" || x === "naodefinido" || x === "semcentrodecusto"; };
+  // ALTERADO (26/11/2026): ND + Informação adicional 1 → o centro de custo que os OUTROS cartões dessa mesma Informação adicional 1
+  // já têm (ex.: CLARO - CONTRATO INFRA SPC → CLARO INFRA SP). Se nenhum cartão dela tiver centro, usa o texto da Informação adicional 1.
+  const ccReal = (t, ccPl, ccCo) => { for (const c of [ccPl.get(String(t.placa || "").toUpperCase()), ccCo.get(t.placa)]) if (!ccVazio(c)) return String(c).trim(); return ""; };
+  function mapaInfoCC(trs, ccPl, ccCo) {
+    const cont = {};
+    trs.forEach(t => { const i1 = sem(t.info1).replace(/\s+/g, " ").trim(); if (!i1) return; const c = ccReal(t, ccPl, ccCo); if (!c) return;
+      (cont[i1] = cont[i1] || {})[c] = (cont[i1][c] || 0) + 1; });
+    const m = {}; Object.keys(cont).forEach(i => { const c = cont[i]; m[i] = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; });
+    return m;
+  }
+  function ccTrans(t, ccPl, ccCo, mInfo) {
+    const c = ccReal(t, ccPl, ccCo); if (c) return c;
+    const i1 = String(t.info1 || "").replace(/\s+/g, " ").trim();
+    if (!i1) return "";
+    return (mInfo && mInfo[sem(i1).replace(/\s+/g, " ").trim()]) || i1;
+  }
   function fonteComb() {
     const tr = TRANS_C[fcb.mes];
     if (tr && tr.length) {
       const ccPl = new Map(CARTOES.map(c => [String(c.placa || "").toUpperCase(), c.centro_custo]));
       const ccCo = new Map(COMB.filter(x => x.centro_custo).map(x => [x.placa, x.centro_custo]));
       const vis = new Set(VEICULOS.map(v => v.placa));
+      const mInfo = mapaInfoCC(Object.keys(TRANS_C).reduce((a, m) => a.concat(TRANS_C[m]), []), ccPl, ccCo);
       const rows = tr.filter(t => noEscopo(t.placa) && (!equipeAtiva() || vis.has(t.placa))).map(t => {
         const ok = !ehPedagio(t) && kmValido(t);
         return { placa: String(t.placa || "").toUpperCase(), mes: fcb.mes, combustivel: ehPedagio(t) ? "" : String(t.combustivel || "").trim().toUpperCase(),
           km_rodados: ok ? n0(numBR(t.km_rodados)) : 0, litros: ehPedagio(t) ? 0 : n0(numBR(t.litros)), litrosKm: ok ? n0(numBR(t.litros)) : 0, total: n0(numBR(t.valor)),
-          centro_custo: ccPl.get(String(t.placa || "").toUpperCase()) || ccCo.get(t.placa) || "", modelo: t.modelo || "", ultima_km: n0(numBR(t.hodometro)), condutores: "", data: String(t.data || "") };
+          centro_custo: ccTrans(t, ccPl, ccCo, mInfo), modelo: t.modelo || "", ultima_km: n0(numBR(t.hodometro)), condutores: "", data: String(t.data || "") };
       });
       const ult = rows.reduce((m, t) => t.data > m ? t.data : m, "");
       return { trans: true, rows, periodo: `de 01/${fcb.mes.slice(5, 7)} até ${ult ? ult.slice(8, 10) + "/" + ult.slice(5, 7) : "hoje"} · transações` };
