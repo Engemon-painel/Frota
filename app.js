@@ -1034,6 +1034,8 @@
       if (COMB.some(x => x.mes === mes) && !window.confirm(`${nomeMes(mes)} já tem consumo gravado. Substituir pelos dados desta planilha?`)) return msg(el, "");
       msg(el, `Enviando ${regs.length} linhas de ${nomeMes(mes)}…`);
       await api("subir_combustivel", { mes, periodo, regs });
+      msg(el, `Gravado. Atualizando a tela…`);
+      await api("dados");   // ALTERADO (26/11/2026): o envio agora só grava; os dados novos vêm nesta segunda chamada
       fcb.mes = mes; montarFiltrosComb(); desenharComb(); desenharInicioComb();
       const fora = COMB.filter(x => x.mes === mes && x.na_frota === "NAO").length;
       // confere com o total que o próprio relatório traz (linhas CENTRO DE CUSTO / Combustível)
@@ -1678,19 +1680,25 @@
       <td class="num">${x.inval || "-"}</td><td class="num">${x.inval ? fmtN(x.pctInval, 1) + "%" : "-"}</td>${ped ? `<td class="num">${x.ped ? "R$ " + fmtN(x.ped, 2) : "-"}</td>` : ""}</tr>`).join("")
       || `<tr><td colspan="17" class="info">Nenhum técnico com esse filtro.</td></tr>`;
     RANK_ATUAL = { mes: frk.mes, r, ped };
-    desenharPorGestor(frk.mes, todasRows);
+    // ALTERADO (26/11/2026): o "Por gestor" segue os filtros Tipo de cartão, Número frota e Combustível (nos dois meses)
+    desenharPorGestor(frk.mes, todasRows, t => bateF(t) && bateM(t) && (!frk.comb || ehPedagio(t) || String(t.combustivel || "").trim().toUpperCase() === frk.comb));
   }
   // por gestor: mês escolhido x mesmo período do mês anterior (do dia 1 até o último dia com transação no mês)
   const mesAnterior = m => { const [a, b] = m.split("-").map(Number); return b === 1 ? `${a - 1}-12` : `${a}-${String(b - 1).padStart(2, "0")}`; };
-  function desenharPorGestor(mes, rows) {
+  function desenharPorGestor(mes, rows, filtro) {
     const ant = mesAnterior(mes);
     if (!TRANS_C[ant]) garantirTrans(ant, () => { if (!$("#aba-rank").hidden) desenharRanking(); });
-    const sem_ped = l => l.filter(t => !ehPedagio(t));
+    const ok = filtro || (() => true);
+    const sem_ped = l => l.filter(t => !ehPedagio(t) && ok(t));
     const atual = sem_ped(rows);
-    const ultDia = atual.reduce((m, t) => Math.max(m, Number(String(t.data).slice(8, 10)) || 0), 0);
+    // dia de corte = último dia com transação no mês (de todo o mês, não só do filtro)
+    const ultDia = rows.reduce((m, t) => Math.max(m, Number(String(t.data).slice(8, 10)) || 0), 0);
     const anterior = sem_ped(transFiltradas(ant, { g: frk.gestor, ct: frk.contrato })).filter(t => (Number(String(t.data).slice(8, 10)) || 0) <= ultDia);
     const alertaSet = new Set(analisarTrans(rows).filter(a => a.alerta).map(a => a.t));
-    const gestorDe = t => donoTrans(t).gestor || "Sem gestor (motorista não é condutor na base)";
+    // mesmo gestor escrito com e sem acento ("Rogerio Luiz de Sa" / "Rogerio Luiz de Sá") vira uma linha só
+    const grafia = {};
+    const gestorDe = t => { const n = donoTrans(t).gestor || "Sem gestor (motorista não é condutor na base)"; const k = sem(n);
+      if (!grafia[k] || (/[^\x00-\x7f]/.test(n) && !/[^\x00-\x7f]/.test(grafia[k]))) grafia[k] = n; return k; };
     const g = {};
     const soma = (l, campo) => { l.forEach(t => { const k = gestorDe(t); g[k] = g[k] || { ab: 0, l: 0, v: 0, va: 0, al: 0 }; if (campo === "v") { g[k].ab++; g[k].l += n0(numBR(t.litros)); g[k].v += n0(numBR(t.valor)); if (alertaSet.has(t)) g[k].al++; } else g[k].va += n0(numBR(t.valor)); }); };
     soma(atual, "v"); soma(anterior, "va");
@@ -1704,7 +1712,7 @@
     $("#rk-ges-cab").innerHTML = `<tr><th class="num">#</th><th>Gestor</th><th class="num">Abast.</th><th class="num">Litros</th><th class="num">Valor ${nm(mes)} ${per}</th><th class="num">% do total</th>
       <th class="num">Valor ${nm(ant)} ${per}</th><th class="num">Variação R$</th><th class="num">Variação %</th><th class="num">Abast. c/ alerta</th></tr>`;
     $("#tb-rk-ges").innerHTML = lista.map((k, i) => { const x = g[k], dv = x.v - x.va, dp = x.va ? dv / x.va * 100 : null;
-      return `<tr><td class="num">${i + 1}</td><td><b>${esc(k)}</b></td><td class="num">${x.ab.toLocaleString("pt-BR")}</td><td class="num">${fmtN(x.l)}</td>
+      return `<tr><td class="num">${i + 1}</td><td><b>${esc(grafia[k] || k)}</b></td><td class="num">${x.ab.toLocaleString("pt-BR")}</td><td class="num">${fmtN(x.l)}</td>
       <td class="num barra-fundo" style="--p:${maxV ? x.v / maxV * 100 : 0}%;--c:#fdba74">R$ ${fmtN(x.v, 2)}</td><td class="num">${tot ? fmtN(x.v / tot * 100, 1) + "%" : "-"}</td>
       <td class="num ant">${temAnt ? "R$ " + fmtN(x.va, 2) : "-"}</td>
       <td class="num ${dv > 0 ? "var-mais" : "var-menos"}">${temAnt ? (dv < 0 ? "-" : "") + "R$ " + fmtN(Math.abs(dv), 2) : "-"}</td>
